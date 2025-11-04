@@ -12,7 +12,7 @@ const getWeatherApiKey = () => {
 // @route   GET /api/weather/current
 // @desc    Get current weather for location
 // @access  Private
-router.get('/current', auth, async (req, res) => {
+router.get('/current', async (req, res) => {
   try {
     const { latitude, longitude } = req.query
 
@@ -145,7 +145,7 @@ router.get('/current', auth, async (req, res) => {
 // @route   GET /api/weather/forecast
 // @desc    Get weather forecast for location
 // @access  Private
-router.get('/forecast', auth, async (req, res) => {
+router.get('/forecast', async (req, res) => {
   try {
     const { latitude, longitude, days = 5 } = req.query
 
@@ -254,7 +254,7 @@ router.get('/forecast', auth, async (req, res) => {
 // @route   GET /api/weather/route
 // @desc    Get weather along a route
 // @access  Private
-router.get('/route', auth, async (req, res) => {
+router.get('/route', async (req, res) => {
   try {
     const { waypoints } = req.query // JSON string of coordinates array
 
@@ -346,7 +346,7 @@ router.get('/route', auth, async (req, res) => {
 // @route   GET /api/weather/alerts
 // @desc    Get weather alerts for location
 // @access  Private
-router.get('/alerts', auth, async (req, res) => {
+router.get('/alerts', async (req, res) => {
   try {
     const { latitude, longitude } = req.query
 

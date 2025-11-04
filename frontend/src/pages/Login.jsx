@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { 
   EnvelopeIcon, 
@@ -17,9 +17,25 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
+  const [searchParams] = useSearchParams()
 
   const { login } = useAuth()
   const navigate = useNavigate()
+
+  // Check if user just verified email
+  useEffect(() => {
+    const confirmed = searchParams.get('confirmed')
+    const type = searchParams.get('type')
+    
+    if (confirmed === 'true' || type === 'signup') {
+      setSuccessMessage('✅ Email verified successfully! You can now login.')
+      // Clear the URL parameters after 5 seconds
+      setTimeout(() => {
+        window.history.replaceState({}, '', '/login')
+      }, 5000)
+    }
+  }, [searchParams])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -29,7 +45,12 @@ const Login = () => {
     const result = await login(formData.email, formData.password)
     
     if (result.success) {
-      navigate('/dashboard')
+      const next = searchParams.get('next')
+      if (next) {
+        navigate(next)
+      } else {
+        navigate('/dashboard')
+      }
     } else {
       setError(result.error || 'Login failed')
     }
@@ -67,6 +88,19 @@ const Login = () => {
           onSubmit={handleSubmit}
           className="card-glow space-y-6"
         >
+          {successMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-green-900/20 border border-green-500/30 text-green-400 px-4 py-3 rounded flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              <span>{successMessage}</span>
+            </motion.div>
+          )}
+
           {error && (
             <div className="bg-red-900/20 border border-red-500/30 text-red-400 px-4 py-3 rounded">
               {error}

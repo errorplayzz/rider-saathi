@@ -14,7 +14,12 @@ import {
 } from '@heroicons/react/24/outline'
 import { useAuth } from '../contexts/AuthContext'
 import { useSocket } from '../contexts/SocketContext'
-import axios from 'axios'
+import {
+  getActiveEmergencyAlerts,
+  createEmergencyAlert,
+  respondToEmergency,
+  resolveEmergency
+} from '../lib/supabaseHelpers'
 
 const Emergency = () => {
   const [activeAlert, setActiveAlert] = useState(null)
@@ -26,10 +31,8 @@ const Emergency = () => {
   const [newContact, setNewContact] = useState({ name: '', phone: '', relationship: '' })
   const [toast, setToast] = useState(null)
   
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const { socket, connected } = useSocket()
-
-  const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000'
 
   const emergencyTypes = [
     {
@@ -158,14 +161,12 @@ const Emergency = () => {
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
-          const response = await axios.get(`${API_URL}/api/emergency/nearby`, {
-            params: {
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-              radius: 10000
-            }
-          })
-          setNearbyAlerts(response.data?.alerts ?? [])
+          const alerts = await getActiveEmergencyAlerts(
+            position.coords.longitude,
+            position.coords.latitude,
+            10000
+          )
+          setNearbyAlerts(alerts || [])
         } catch (error) {
           console.error('Alerts fetch error:', error)
         }
@@ -176,8 +177,9 @@ const Emergency = () => {
 
   const fetchEmergencyContacts = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/auth/emergency-contacts`)
-      setEmergencyContacts(response.data?.contacts || [])
+      // Emergency contacts stored in profile preferences
+      const contacts = profile?.preferences?.emergencyContacts || []
+      setEmergencyContacts(contacts)
     } catch (error) {
       console.error('Emergency contacts fetch error:', error)
     }
@@ -206,19 +208,23 @@ const Emergency = () => {
 
       // If still no loc, send a placeholder (backend prefers location but may accept nulls)
       const payload = {
-        type,
-        location: loc ? { latitude: loc.latitude, longitude: loc.longitude } : null,
+        user_id: user.id,
+        alert_type: type,
+        location: loc ? {
+          type: 'Point',
+          coordinates: [loc.longitude, loc.latitude]
+        } : null,
         description: `${type} emergency alert`,
         severity: type === 'medical' || type === 'fire' ? 'high' : 'medium'
       }
 
-      const response = await axios.post(`${API_URL}/api/emergency/alert`, payload)
+      const alert = await createEmergencyAlert(payload)
 
-      setActiveAlert(response.data.alert)
+      setActiveAlert(alert)
 
       // Emit via socket for real-time updates
       if (socket) {
-        socket.emit('emergency-alert', response.data.alert)
+        socket.emit('emergency-alert', alert)
       }
 
       // Play a subtle alert sound
@@ -261,10 +267,10 @@ const Emergency = () => {
 
     setIsResponding(true)
     try {
-      await axios.post(`${API_URL}/api/emergency/respond/${alertId}`, {
-        responderLocation: {
-          latitude: userLocation.latitude,
-          longitude: userLocation.longitude
+      await respondToEmergency(alertId, user.id, {
+        responder_location: {
+          type: 'Point',
+          coordinates: [userLocation.longitude, userLocation.latitude]
         }
       })
 
@@ -295,8 +301,7 @@ const Emergency = () => {
 
   const resolveAlert = async (alertId) => {
     try {
-      // backend expects PUT /api/emergency/resolve/:alertId
-      await axios.put(`${API_URL}/api/emergency/resolve/${alertId}`)
+      await resolveEmergency(alertId)
       
       setNearbyAlerts(prev => prev.filter(alert => alert.id !== alertId))
       if (activeAlert?.id === alertId) {
@@ -312,7 +317,7 @@ const Emergency = () => {
   setTimeout(() => setToast(null), 3000)
     } catch (error) {
       console.error('Resolve error:', error)
-      const message = error.response?.data?.message || 'Failed to resolve alert'
+      const message = error.message || 'Failed to resolve alert'
       setToast({ message, type: 'warning' })
       setTimeout(() => setToast(null), 4000)
     }
@@ -325,8 +330,18 @@ const Emergency = () => {
     }
 
     try {
-      const response = await axios.post('/api/auth/emergency-contacts', newContact)
-      setEmergencyContacts(response.data.contacts)
+      // Store emergency contacts in profile preferences
+      const contacts = profile?.preferences?.emergencyContacts || []
+      const updatedContacts = [...contacts, newContact]
+      
+      // Update via AuthContext - need to import updateProfile from supabaseHelpers
+      const { updateProfile: updateProfileHelper } = await import('../lib/supabaseHelpers')
+      const preferences = profile?.preferences || {}
+      await updateProfileHelper(user.id, {
+        preferences: { ...preferences, emergencyContacts: updatedContacts }
+      })
+      
+      setEmergencyContacts(updatedContacts)
       setNewContact({ name: '', phone: '', relationship: '' })
       setShowContactForm(false)
       alert('Emergency contact added successfully!')

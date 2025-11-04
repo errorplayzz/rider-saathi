@@ -1,7 +1,6 @@
 import React, { Suspense, useState, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import io from 'socket.io-client'
 
 // Components
 import IntroVideo from './components/IntroVideo'
@@ -95,7 +94,14 @@ function App() {
                       } 
                     />
                     <Route path="/forgot-password" element={<ForgotPassword />} />
-                    <Route path="/chatbot" element={<Chatbot />} />
+                    <Route 
+                      path="/chatbot" 
+                      element={
+                        <ProtectedRoute>
+                          <Chatbot />
+                        </ProtectedRoute>
+                      } 
+                    />
                     <Route 
                       path="/profile" 
                       element={

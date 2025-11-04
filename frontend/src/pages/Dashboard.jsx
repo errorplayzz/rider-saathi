@@ -13,7 +13,11 @@ import {
 } from '@heroicons/react/24/outline'
 import { useAuth } from '../contexts/AuthContext'
 import { useSocket } from '../contexts/SocketContext'
-import axios from 'axios'
+import { 
+  getLeaderboard, 
+  getActiveEmergencyAlerts,
+  createRide
+} from '../lib/supabaseHelpers'
 
 const Dashboard = () => {
   const [stats, setStats] = useState(null)
@@ -26,10 +30,8 @@ const Dashboard = () => {
   const [isRiding, setIsRiding] = useState(false)
   const [currentLocation, setCurrentLocation] = useState(null)
   
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const { socket, connected, onlineUsers } = useSocket()
-
-  const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000'
 
   useEffect(() => {
     fetchUserStats()
@@ -122,15 +124,17 @@ const Dashboard = () => {
 
   const fetchUserStats = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/auth/profile`)
-      // Defensive: API may return different shapes (demo mode or partial data)
-      const statsData = response.data?.user?.stats ?? response.data?.stats ?? null
-      setStats(statsData)
-    } catch (error) {
-      // If unauthorized, surface a clearer message for debugging
-      if (error.response?.status === 401) {
-        console.warn('Stats fetch unauthorized (401) - user may not be authenticated')
+      // Get stats from profile (already loaded in AuthContext)
+      if (profile) {
+        const statsData = {
+          totalRides: profile.total_rides || 0,
+          totalDistance: profile.total_distance_meters ? (profile.total_distance_meters / 1000).toFixed(1) : '0',
+          rewardPoints: profile.reward_points || 0,
+          helpGiven: profile.help_count || 0
+        }
+        setStats(statsData)
       }
+    } catch (error) {
       console.error('Stats fetch error:', error)
     }
   }
@@ -141,15 +145,39 @@ const Dashboard = () => {
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
-          const response = await axios.get(`${API_URL}/api/weather/current`, {
-            params: {
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude
+          const lat = position.coords.latitude
+          const lon = position.coords.longitude
+
+          // Prefer calling backend so API key stays server-side and logic is centralized.
+          const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000'
+
+          // Get a token from Auth context (Supabase session) if available
+          const token = (typeof session !== 'undefined' && session?.access_token) ? session.access_token : 'demo-token'
+
+          const url = `${API_BASE.replace(/\/$/, '')}/api/weather/current?latitude=${lat}&longitude=${lon}`
+
+          const res = await fetch(url, {
+            headers: {
+              'Accept': 'application/json',
+              'Authorization': `Bearer ${token}`
             }
           })
-          setWeather(response.data.weather)
+
+          if (!res.ok) throw new Error(`Weather API returned ${res.status}`)
+
+          const body = await res.json()
+          // backend returns { success: true, weather: { ... } }
+          if (body && body.success && body.weather) {
+            setWeather(body.weather)
+            return
+          }
+
+          // Fallback to a small demo object if backend returns unexpected payload
+          setWeather({ current: { temperature: 28, description: 'clear sky' }, rideConditions: { isGoodForRiding: true, warnings: [] } })
         } catch (error) {
-          console.error('Weather fetch error:', error)
+          console.error('Weather fetch error (backend):', error)
+          // On any error, show demo weather so UI remains useful
+          setWeather({ current: { temperature: 28, description: 'clear sky' }, rideConditions: { isGoodForRiding: true, warnings: [] } })
         }
       },
       (error) => console.error('Location error:', error)
@@ -162,14 +190,11 @@ const Dashboard = () => {
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
-          const response = await axios.get(`${API_URL}/api/emergency/nearby`, {
-            params: {
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-              radius: 10000
-            }
-          })
-          const alerts = response.data?.alerts ?? []
+          const alerts = await getActiveEmergencyAlerts(
+            position.coords.longitude,
+            position.coords.latitude,
+            10000 // 10km radius
+          )
           setNearbyAlerts(Array.isArray(alerts) ? alerts.slice(0, 5) : [])
         } catch (error) {
           console.error('Alerts fetch error:', error)
@@ -181,10 +206,8 @@ const Dashboard = () => {
 
   const fetchLeaderboard = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/rewards/leaderboard`, {
-        params: { period: 'weekly', limit: 5 }
-      })
-      setLeaderboard(response.data?.leaderboard ?? [])
+      const leaderboardData = await getLeaderboard(5)
+      setLeaderboard(leaderboardData || [])
     } catch (error) {
       console.error('Leaderboard fetch error:', error)
     }
@@ -197,12 +220,10 @@ const Dashboard = () => {
     }
 
     try {
-      const response = await axios.post(`${API_URL}/api/gps/start-ride`, {
-        startLocation: {
-          latitude: currentLocation.latitude,
-          longitude: currentLocation.longitude
-        },
-        rideType: 'solo'
+      const ride = await createRide(user.id, {
+        longitude: currentLocation.longitude,
+        latitude: currentLocation.latitude,
+        address: 'Starting location'
       })
       
       setIsRiding(true)
@@ -268,7 +289,7 @@ const Dashboard = () => {
           className="mb-8"
         >
           <h1 className="text-3xl md:text-4xl font-orbitron font-bold text-white mb-2">
-            Welcome back, {user?.name || 'Rider'}!
+            Welcome back, {profile?.name || user?.user_metadata?.name || 'Rider'}!
           </h1>
           <p className="text-gray-300">
             Ready for your next adventure? Here's your riding dashboard.

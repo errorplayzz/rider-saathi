@@ -5,7 +5,11 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
-import axios from 'axios'
+import { 
+  getActiveEmergencyAlerts,
+  createEmergencyAlert,
+  respondToEmergency
+} from '../lib/supabaseHelpers'
 
 // Fix for default markers in React Leaflet
 delete L.Icon.Default.prototype._getIconUrl
@@ -79,8 +83,6 @@ const Map = () => {
   const watchIdRef = useRef(null)
   const lastSentRef = useRef(0)
   const lastPosRef = useRef(null)
-
-  const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000'
 
   // Get user's current location and watch for changes (higher accuracy + smoothing)
   useEffect(() => {
@@ -186,10 +188,8 @@ const Map = () => {
 
   const fetchWeather = async (lat, lng) => {
     try {
-      const response = await axios.get(`${API_URL}/api/weather/current`, {
-        params: { latitude: lat, longitude: lng }
-      })
-      setWeather(response.data.weather)
+      // Weather API - can be integrated with external service later
+      console.log('Weather feature - add external API integration')
     } catch (error) {
       console.error('Weather fetch error:', error)
     }
@@ -198,11 +198,9 @@ const Map = () => {
   const fetchNearbyPOIs = async (lat, lng, type) => {
     setIsLoading(true)
     try {
-      const response = await axios.get(`${API_URL}/api/gps/nearby-pois`, {
-        params: { latitude: lat, longitude: lng, type, radius: 5000 }
-      })
-      const pois = response.data?.pois
-      setNearbyPOIs(Array.isArray(pois) ? pois : [])
+      // POI data can be integrated with mapping services (Google Places, etc.)
+      console.log('POI feature - add mapping service integration')
+      setNearbyPOIs([])
     } catch (error) {
       console.error('POI fetch error:', error)
     } finally {
@@ -212,10 +210,8 @@ const Map = () => {
 
   const fetchNearbyEmergencies = async (lat, lng) => {
     try {
-      const response = await axios.get(`${API_URL}/api/emergency/nearby`, {
-        params: { latitude: lat, longitude: lng, radius: 10000 }
-      })
-      setEmergencyAlerts(response.data?.alerts ?? [])
+      const alerts = await getActiveEmergencyAlerts(lng, lat, 10000)
+      setEmergencyAlerts(alerts || [])
     } catch (error) {
       console.error('Emergency fetch error:', error)
     }
@@ -223,15 +219,9 @@ const Map = () => {
 
   const calculateRoute = async (start, end) => {
     try {
-      const response = await axios.get(`${API_URL}/api/gps/route`, {
-        params: {
-          startLat: start.lat,
-          startLng: start.lng,
-          endLat: end.lat,
-          endLng: end.lng
-        }
-      })
-      setRouteData(response.data?.route ?? null)
+      // Route calculation can be integrated with mapping services (Google Maps, etc.)
+      console.log('Route calculation - add mapping service integration')
+      setRouteData(null)
     } catch (error) {
       console.error('Route calculation error:', error)
     }
@@ -258,17 +248,20 @@ const Map = () => {
     }
 
     try {
-      await axios.post(`${API_URL}/api/emergency/alert`, {
-        type,
+      await createEmergencyAlert({
+        user_id: user.id,
+        alert_type: type,
         severity: 'high',
         location: {
-          latitude: userLocation.lat,
-          longitude: userLocation.lng
+          type: 'Point',
+          coordinates: [userLocation.lng, userLocation.lat]
         },
         description: `Emergency alert sent from map`
       })
       
       alert('Emergency alert sent successfully!')
+      // Refresh emergency alerts
+      fetchNearbyEmergencies(userLocation.lat, userLocation.lng)
     } catch (error) {
       console.error('Emergency alert error:', error)
       alert('Failed to send emergency alert')
@@ -404,15 +397,19 @@ const Map = () => {
                   Reported: {new Date(alert.createdAt).toLocaleTimeString()}
                 </p>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     // Handle emergency response
                     if (confirm('Respond to this emergency?')) {
-                      axios.post(`${API_URL}/api/emergency/respond/${alert.id}`, {
-                        message: 'On my way to help',
-                        estimatedArrival: 10
-                      }).then(() => {
+                      try {
+                        await respondToEmergency(alert.id, user.id, {
+                          message: 'On my way to help',
+                          estimated_arrival_minutes: 10
+                        })
                         alert('Response sent!')
-                      }).catch(console.error)
+                      } catch (error) {
+                        console.error('Response error:', error)
+                        alert('Failed to send response')
+                      }
                     }
                   }}
                   className="mt-2 px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"

@@ -1,35 +1,37 @@
 import React, { useEffect, useState } from 'react'
-import axios from 'axios'
 import { motion } from 'framer-motion'
-import { Link } from 'react-router-dom'
-import bgVideo from '../assets/rider-saathi-bg-video-1.mp4'
+import { Link, useNavigate } from 'react-router-dom'
+import bgImage from '../assets/rider-saathi-bg-image.png'
 import features from '../data/features'
 import Footer from '../components/Footer'
-
-
+import { useAuth } from '../contexts/AuthContext'
 
 const Home = () => {
   const [homepageStats, setHomepageStats] = useState(defaultStats)
   const [statsLoading, setStatsLoading] = useState(true)
+  const { profile, isAuthenticated } = useAuth()
+  const navigate = useNavigate()
 
   useEffect(() => {
     let mounted = true
+    
     const fetchStats = async () => {
       try {
-        // Try to get stats via profile endpoint (returns demo stats when DB disconnected)
-        const resp = await axios.get('/api/auth/profile')
-        const user = resp.data.user || {}
-        const s = user.stats || {}
-        if (!mounted) return
-        setHomepageStats({
-          totalRides: s.totalRides || 0,
-          totalDistance: s.totalDistance || 0,
-          rewardPoints: s.rewardPoints || 0,
-          helpCount: s.helpCount || 0
-        })
+        // If user is authenticated, use their profile stats
+        if (isAuthenticated && profile) {
+          setHomepageStats({
+            totalRides: profile.total_rides || 0,
+            totalDistance: profile.total_distance_meters || 0,
+            rewardPoints: profile.reward_points || 0,
+            helpCount: profile.help_count || 0
+          })
+        } else {
+          // Show default stats for non-authenticated users
+          setHomepageStats(defaultStats)
+        }
       } catch (err) {
         console.error('Failed to load homepage stats:', err)
-        // keep defaults (zeros)
+        setHomepageStats(defaultStats)
       } finally {
         if (mounted) setStatsLoading(false)
       }
@@ -37,7 +39,7 @@ const Home = () => {
 
     fetchStats()
     return () => { mounted = false }
-  }, [])
+  }, [profile, isAuthenticated])
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -45,9 +47,7 @@ const Home = () => {
       <section className="relative h-screen flex items-center justify-center">
         {/* Background: video + 3D Canvas (video sits lowest, canvas above it) */}
         <div className="absolute inset-0 z-0">
-          <video className="bg-video" autoPlay muted loop playsInline aria-hidden="true">
-            <source src={bgVideo} type="video/mp4" />
-          </video>
+          <img src={bgImage} alt="Rider Saathi background" className="bg-video" aria-hidden="true" />
         </div>
 
         {/* Hero Content */}
@@ -79,7 +79,16 @@ const Home = () => {
                 </motion.button>
               </Link>
               
-              <Link to="/chatbot">
+              <button
+                onClick={() => {
+                  if (isAuthenticated) {
+                    navigate('/chatbot')
+                  } else {
+                    // Redirect to login and return to chatbot after successful login
+                    navigate('/login?next=/chatbot')
+                  }
+                }}
+              >
                 <motion.button
                   whileHover={{ scale: 1.05, boxShadow: '0 0 30px #bf00ff' }}
                   whileTap={{ scale: 0.95 }}
@@ -87,7 +96,7 @@ const Home = () => {
                 >
                   AI Chat Bot
                 </motion.button>
-              </Link>
+              </button>
             </div>
           </motion.div>
         </div>

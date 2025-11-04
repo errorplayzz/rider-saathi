@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import Footer from '../components/Footer'
-import axios from 'axios'
+import { useAuth } from '../contexts/AuthContext'
 
 const Chatbot = () => {
   const [messages, setMessages] = useState([])
@@ -10,6 +10,7 @@ const Chatbot = () => {
   const [loading, setLoading] = useState(false)
   const chatWindowRef = useRef(null)
   const navigate = useNavigate()
+  const { session } = useAuth()
 
   // We'll call the backend proxy (/api/ai/gpt) which uses the server-side OpenAI key.
   // This avoids exposing secrets to the browser.
@@ -30,34 +31,57 @@ const Chatbot = () => {
     setLoading(true)
 
     try {
-      // Send message to backend proxy which will forward to OpenAI using server-side key
-  // Use Vite env via import.meta.env in the browser (process is not defined in the browser)
-  const payload = { messages: [{ role: 'user', content }], model: import.meta.env.VITE_OPENAI_MODEL || 'gpt-3.5-turbo' }
+      // Build payload: prefer messages array from conversation for better context
+      const recentMessages = messages
+        .filter(m => m.text)
+        .map(m => ({ role: m.cls === 'user' ? 'user' : 'assistant', content: m.text }))
 
-      let response
-      try {
-        response = await axios.post('/api/ai/gpt', payload)
-      } catch (err) {
-        // If auth failure (401), try the temporary public proxy if available
-        const status = err?.response?.status
-        if (status === 401) {
-          console.warn('Auth failed for /api/ai/gpt — attempting /api/ai/gpt-public for testing')
-          response = await axios.post('/api/ai/gpt-public', payload)
-        } else {
-          throw err
-        }
+      // Ensure the last user message is included
+      if (recentMessages.length === 0 || recentMessages[recentMessages.length - 1].role !== 'user') {
+        recentMessages.push({ role: 'user', content })
       }
 
-      // If proxy returned OpenAI response, extract the assistant reply
-      const data = response.data
-      const reply = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || (data?.responses && data.responses[0]) || 'No reply'
+      const payload = { messages: recentMessages }
 
-      setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { text: reply, cls: 'bot' } : m))
+      const apiBase = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000'
+      const gptUrl = `${apiBase.replace(/\/$/, '')}/api/ai/gpt`
+
+      // Try authenticated endpoint first
+      const headers = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
+
+      let res = await fetch(gptUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      })
+
+      // If unauthorized or blocked, try public testing endpoint
+      if (res.status === 401) {
+        const publicUrl = `${apiBase.replace(/\/$/, '')}/api/ai/gpt-public`
+        res = await fetch(publicUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+      }
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}))
+        throw new Error(errBody?.message || `AI API returned ${res.status}`)
+      }
+
+      const data = await res.json()
+
+      // Parse common shapes (OpenAI-like / GROQ)
+      const replyText = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || data?.responses?.[0] || data?.message || data?.output || (typeof data === 'string' ? data : null)
+
+      const finalReply = (replyText && String(replyText)) || "I'm sorry, I couldn't generate a reply."
+
+      setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { text: finalReply, cls: 'bot' } : m))
     } catch (err) {
-      console.error('Chatbot error:', err?.response?.data || err.message)
-      const serverMsg = err?.response?.data?.error || err?.response?.data || err.message
-      // show helpful message to user
-      setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { text: 'Error: ' + JSON.stringify(serverMsg), cls: 'bot' } : m))
+      console.error('Chatbot error:', err.message)
+      setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { text: 'Error: ' + (err.message || 'unknown'), cls: 'bot' } : m))
     } finally {
       setLoading(false)
     }

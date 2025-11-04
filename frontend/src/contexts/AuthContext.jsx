@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
-import axios from 'axios'
+import { supabase, getCurrentUser, signOut as supabaseSignOut } from '../lib/supabase'
+import { getProfile, updateProfile as updateProfileHelper } from '../lib/supabaseHelpers'
 
 const AuthContext = createContext()
 
@@ -13,145 +14,217 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
-  const [token, setToken] = useState(localStorage.getItem('token'))
+  const [profile, setProfile] = useState(null)
+  const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
-
-  const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000'
-
-  // Configure axios defaults
-  useEffect(() => {
-    // Ensure all relative axios calls go to the backend server
-    axios.defaults.baseURL = API_URL
-
-    if (token) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-    } else {
-      delete axios.defaults.headers.common['Authorization']
-    }
-  }, [token, API_URL])
 
   // Check if user is authenticated on mount
   useEffect(() => {
-    const checkAuth = async () => {
-      if (token) {
-        try {
-          // Attach Authorization header explicitly to avoid race where defaults aren't set yet
-          const response = await axios.get(`${API_URL}/api/auth/profile`, {
-            headers: { Authorization: `Bearer ${token}` }
-          })
-          setUser(normalizeUser(response.data.user))
-        } catch (error) {
-          localStorage.removeItem('token')
-          setToken(null)
-          setUser(null)
-        }
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setUser(session?.user ?? null)
+      if (session?.user) {
+        loadProfile(session.user.id)
+      } else {
+        setLoading(false)
       }
-      setLoading(false)
-    }
+    })
 
-    checkAuth()
-  }, [token, API_URL])
-
-  // Global axios response interceptor: auto-logout on 401 to keep UI state consistent
-  useEffect(() => {
-    const id = axios.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        if (error.response?.status === 401) {
-          // Clear local auth state
-          localStorage.removeItem('token')
-          setToken(null)
-          setUser(null)
-        }
-        return Promise.reject(error)
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setSession(session)
+      setUser(session?.user ?? null)
+      
+      if (session?.user) {
+        await loadProfile(session.user.id)
+      } else {
+        setProfile(null)
+        setLoading(false)
       }
-    )
+    })
 
-    return () => {
-      axios.interceptors.response.eject(id)
-    }
+    return () => subscription.unsubscribe()
   }, [])
 
-  const normalizeUser = (u) => (u ? { id: u.id || u._id, _id: u._id || u.id, ...u } : u)
+  const loadProfile = async (userId) => {
+    try {
+      const profileData = await getProfile(userId)
+      setProfile(profileData)
+    } catch (error) {
+      console.error('Error loading profile:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const login = async (email, password) => {
     try {
-      console.log('Attempting login with:', { email, API_URL })
-      const response = await axios.post(`${API_URL}/api/auth/login`, {
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       })
       
-      console.log('Login response:', response.data)
+      if (error) throw error
       
-  const { token: newToken, user: userData } = response.data
-      
-  setToken(newToken)
-  setUser(normalizeUser(userData))
-      // Ensure Authorization header is set immediately to avoid race with useEffect
-      axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`
-      localStorage.setItem('token', newToken)
-      
-      return { success: true }
+      // Profile will be loaded via onAuthStateChange
+      return { success: true, user: data.user }
     } catch (error) {
       console.error('Login error:', error)
       return {
         success: false,
-        error: error.response?.data?.message || 'Login failed'
+        error: error.message || 'Login failed'
       }
     }
   }
 
   const register = async (userData) => {
     try {
-      const response = await axios.post(`${API_URL}/api/auth/register`, userData)
+      const { email, password, name, phone, bikeDetails } = userData
       
-      const { token: newToken, user: newUser } = response.data
+      // Sign up the user
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+            phone
+          }
+        }
+      })
       
-      setToken(newToken)
-      setUser(normalizeUser(newUser))
-      localStorage.setItem('token', newToken)
-      // Set header immediately like in login to avoid race conditions
-      axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`
+      if (signUpError) throw signUpError
       
-      return { success: true }
+      // The profile is auto-created via the trigger, but we can update it with additional data
+      if (authData.user) {
+        const updates = {
+          name,
+          phone,
+          bike_details: bikeDetails || {}
+        }
+        
+        // Wait a moment for the trigger to create the profile
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        
+        // Try to update profile, but don't fail if it doesn't exist yet
+        try {
+          await updateProfileHelper(authData.user.id, updates)
+        } catch (profileError) {
+          console.warn('Profile update failed, will be created on first login:', profileError.message)
+          // Don't throw error - profile will be synced on next login
+        }
+      }
+      
+      return { success: true, user: authData.user }
     } catch (error) {
+      console.error('Registration error:', error)
       return {
         success: false,
-        error: error.response?.data?.message || 'Registration failed'
+        error: error.message || 'Registration failed'
       }
     }
   }
 
-  const logout = () => {
-    setToken(null)
-    setUser(null)
-    localStorage.removeItem('token')
-    delete axios.defaults.headers.common['Authorization']
+  const logout = async () => {
+    try {
+      await supabaseSignOut()
+      setUser(null)
+      setProfile(null)
+      setSession(null)
+    } catch (error) {
+      console.error('Logout error:', error)
+    }
   }
 
   const updateProfile = async (profileData) => {
     try {
-      const response = await axios.put(`${API_URL}/api/auth/profile`, profileData)
-      setUser(normalizeUser(response.data.user))
-      return { success: true }
+      if (!user) throw new Error('No user logged in')
+      
+      const updatedProfile = await updateProfileHelper(user.id, profileData)
+      setProfile(updatedProfile)
+      
+      return { success: true, profile: updatedProfile }
     } catch (error) {
+      console.error('Profile update error:', error)
       return {
         success: false,
-        error: error.response?.data?.message || 'Profile update failed'
+        error: error.message || 'Profile update failed'
       }
+    }
+  }
+
+  const resetPassword = async (email) => {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`
+      })
+      
+      if (error) throw error
+      
+      return { success: true }
+    } catch (error) {
+      console.error('Password reset error:', error)
+      return {
+        success: false,
+        error: error.message || 'Password reset failed'
+      }
+    }
+  }
+
+  const updatePassword = async (newPassword) => {
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      })
+      
+      if (error) throw error
+      
+      return { success: true }
+    } catch (error) {
+      console.error('Password update error:', error)
+      return {
+        success: false,
+        error: error.message || 'Password update failed'
+      }
+    }
+  }
+
+  const refreshProfile = async () => {
+    try {
+      if (!user?.id) return
+      
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+      
+      if (error) throw error
+      
+      setProfile(data)
+      return data
+    } catch (error) {
+      console.error('Profile refresh error:', error)
+      return null
     }
   }
 
   const value = {
     user,
-    token,
+    profile,
+    session,
     loading,
     login,
     register,
     logout,
     updateProfile,
-    isAuthenticated: !!token && !!user
+    refreshProfile,
+    resetPassword,
+    updatePassword,
+    isAuthenticated: !!user && !!profile
   }
 
   return (

@@ -268,6 +268,8 @@ export const handleSocketConnection = (io) => {
       try {
         const { roomId, message, messageType = 'text', media, location } = data
 
+        console.log(`[Socket] User ${socket.userId} sending message to room ${roomId}`)
+
         // Validate room membership
         const room = await ChatRoom.findById(roomId)
         if (!room) {
@@ -300,6 +302,8 @@ export const handleSocketConnection = (io) => {
         room.lastActivity = new Date()
         await room.save()
 
+        console.log(`[Socket] Broadcasting message ${chatMessage._id} to room chat_${roomId}`)
+
         // Broadcast message to room with a consistent payload shape
         io.to(`chat_${roomId}`).emit('new-message', {
           chatId: roomId,
@@ -312,6 +316,13 @@ export const handleSocketConnection = (io) => {
             location: chatMessage.location,
             timestamp: chatMessage.createdAt
           }
+        })
+
+        // Send acknowledgment to sender
+        socket.emit('message-sent', {
+          tempId: data.tempId,
+          messageId: chatMessage._id,
+          timestamp: chatMessage.createdAt
         })
 
       } catch (error) {

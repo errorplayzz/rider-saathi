@@ -1,6 +1,13 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
-import io from 'socket.io-client'
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { supabase } from '../lib/supabase'
 import { useAuth } from './AuthContext'
+import { 
+  updateLocation as updateLocationHelper,
+  updateUserStatus,
+  sendMessage as sendMessageHelper,
+  createEmergencyAlert as createEmergencyAlertHelper,
+  addRideWaypoint
+} from '../lib/supabaseHelpers'
 
 const SocketContext = createContext()
 
@@ -13,171 +20,295 @@ export const useSocket = () => {
 }
 
 export const SocketProvider = ({ children }) => {
-  const [socket, setSocket] = useState(null)
   const [connected, setConnected] = useState(false)
   const [onlineUsers, setOnlineUsers] = useState([])
-  const { user, token } = useAuth()
+  const [activeChannels, setActiveChannels] = useState(new Map())
+  const { user, profile } = useAuth()
 
-  const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000'
-
+  // Presence channel for online/offline tracking
   useEffect(() => {
-    if (token && user) {
-      // Debug: ensure token presence and length before creating socket
-      try {
-        console.log('Initializing socket. token present:', !!token, 'token length:', token?.length)
-      } catch (e) {
-        // ignore
-      }
+    if (!user || !profile) {
+      setConnected(false)
+      return
+    }
 
-      const newSocket = io(SOCKET_URL, {
-        auth: {
-          token
+    // Subscribe to presence channel
+    const presenceChannel = supabase.channel('online-users', {
+      config: {
+        presence: {
+          key: user.id
+        }
+      }
+    })
+
+    presenceChannel
+      .on('presence', { event: 'sync' }, () => {
+        const state = presenceChannel.presenceState()
+        const users = Object.keys(state).map(userId => ({
+          userId,
+          ...state[userId][0]
+        }))
+        setOnlineUsers(users)
+      })
+      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+        console.log('User joined:', key)
+      })
+      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+        console.log('User left:', key)
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          // Track our own presence
+          await presenceChannel.track({
+            user_id: user.id,
+            email: user.email,
+            name: profile.name,
+            online_at: new Date().toISOString()
+          })
+          
+          // Update database status
+          await updateUserStatus(user.id, true)
+          setConnected(true)
+          console.log('✅ Connected to Supabase Realtime')
         }
       })
 
-      newSocket.on('connect', () => {
-        console.log('✅ Connected to server, socket id =', newSocket.id)
-        setConnected(true)
-        
-        // Join user to their personal room
-        newSocket.emit('join-user-room', user._id)
-      })
-
-      newSocket.on('disconnect', () => {
-        console.log('Disconnected from server')
-        setConnected(false)
-      })
-
-      // Server emits a list of online users when someone connects/disconnects
-      newSocket.on('online-users', (users) => {
-        // users is an array of { userId, email }
-        setOnlineUsers(users || [])
-      })
-
-      // Also listen to single user online/offline events and mutate list
-      newSocket.on('user-online', (userId) => {
-        setOnlineUsers(prev => {
-          if (prev.some(u => u.userId === userId)) return prev
-          return [...prev, { userId }]
-        })
-      })
-
-      newSocket.on('user-offline', (userId) => {
-        setOnlineUsers(prev => prev.filter(u => u.userId !== userId))
-      })
-
-      newSocket.on('connect_error', (error) => {
-        console.error('Socket connection error:', error)
-        setConnected(false)
-      })
-
-      setSocket(newSocket)
-
-      return () => {
-        newSocket.close()
+    // Cleanup on unmount
+    return () => {
+      presenceChannel.unsubscribe()
+      if (user) {
+        updateUserStatus(user.id, false).catch(console.error)
       }
-    } else {
-      if (socket) {
-        socket.close()
-        setSocket(null)
-        setConnected(false)
-      }
+      setConnected(false)
     }
-  }, [token, user, SOCKET_URL])
+  }, [user, profile])
 
-  // Location tracking functions
-  const updateLocation = (location) => {
-    if (socket && connected) {
-      socket.emit('location-update', {
-        userId: user._id,
-        location,
-        timestamp: Date.now()
+  // Subscribe to a chat room
+  const joinChatRoom = useCallback((roomId) => {
+    if (!roomId || activeChannels.has(roomId)) return
+
+    const channel = supabase
+      .channel(`room:${roomId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `room_id=eq.${roomId}`
+        },
+        (payload) => {
+          // Emit custom event for components to listen to
+          window.dispatchEvent(
+            new CustomEvent('new-message', {
+              detail: { roomId, message: payload.new }
+            })
+          )
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`Joined chat room: ${roomId}`)
+        }
+      })
+
+    setActiveChannels(prev => new Map(prev).set(roomId, channel))
+  }, [activeChannels])
+
+  // Leave a chat room
+  const leaveChatRoom = useCallback((roomId) => {
+    const channel = activeChannels.get(roomId)
+    if (channel) {
+      channel.unsubscribe()
+      setActiveChannels(prev => {
+        const newMap = new Map(prev)
+        newMap.delete(roomId)
+        return newMap
+      })
+      console.log(`Left chat room: ${roomId}`)
+    }
+  }, [activeChannels])
+
+  // Send a message
+  const sendMessage = useCallback(async (roomId, message, messageType = 'text') => {
+    if (!user) return
+
+    try {
+      const result = await sendMessageHelper(roomId, user.id, message, messageType)
+      return result
+    } catch (error) {
+      console.error('Error sending message:', error)
+      throw error
+    }
+  }, [user])
+
+  // Update location
+  const updateLocation = useCallback(async (location) => {
+    if (!user) return
+
+    try {
+      await updateLocationHelper(
+        user.id,
+        location.longitude,
+        location.latitude,
+        location.address
+      )
+
+      // Broadcast location update via realtime
+      const channel = supabase.channel('location-updates')
+      await channel.send({
+        type: 'broadcast',
+        event: 'location-update',
+        payload: {
+          userId: user.id,
+          location,
+          timestamp: Date.now()
+        }
+      })
+    } catch (error) {
+      console.error('Error updating location:', error)
+    }
+  }, [user])
+
+  // Subscribe to emergency alerts
+  const subscribeToEmergencyAlerts = useCallback((callback) => {
+    const channel = supabase
+      .channel('emergency-alerts')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'emergency_alerts'
+        },
+        (payload) => {
+          callback(payload.new)
+        }
+      )
+      .subscribe()
+
+    return () => channel.unsubscribe()
+  }, [])
+
+  // Send emergency alert
+  const sendEmergencyAlert = useCallback(async (alertData) => {
+    if (!user) return
+
+    try {
+      const alert = await createEmergencyAlertHelper(
+        user.id,
+        alertData.type,
+        alertData.severity,
+        alertData.location,
+        alertData.description
+      )
+      
+      return alert
+    } catch (error) {
+      console.error('Error sending emergency alert:', error)
+      throw error
+    }
+  }, [user])
+
+  // Join ride group (subscribe to ride updates)
+  const joinRideGroup = useCallback((rideId) => {
+    if (!rideId || activeChannels.has(`ride:${rideId}`)) return
+
+    const channel = supabase
+      .channel(`ride:${rideId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'rides',
+          filter: `id=eq.${rideId}`
+        },
+        (payload) => {
+          window.dispatchEvent(
+            new CustomEvent('ride-update', {
+              detail: { rideId, ride: payload.new }
+            })
+          )
+        }
+      )
+      .subscribe()
+
+    setActiveChannels(prev => new Map(prev).set(`ride:${rideId}`, channel))
+  }, [activeChannels])
+
+  // Leave ride group
+  const leaveRideGroup = useCallback((rideId) => {
+    const channel = activeChannels.get(`ride:${rideId}`)
+    if (channel) {
+      channel.unsubscribe()
+      setActiveChannels(prev => {
+        const newMap = new Map(prev)
+        newMap.delete(`ride:${rideId}`)
+        return newMap
       })
     }
-  }
+  }, [activeChannels])
 
-  const joinRideGroup = (groupId) => {
-    if (socket && connected) {
-      socket.emit('join-ride-group', groupId)
-    }
-  }
+  // Send battery alert
+  const sendBatteryAlert = useCallback(async (batteryLevel) => {
+    if (!user) return
 
-  const leaveRideGroup = (groupId) => {
-    if (socket && connected) {
-      socket.emit('leave-ride-group', groupId)
-    }
-  }
-
-  // Emergency functions
-  const sendEmergencyAlert = (alertData) => {
-    if (socket && connected) {
-      socket.emit('emergency-alert', {
-        ...alertData,
-        userId: user._id,
-        timestamp: Date.now()
+    try {
+      // You can store this in a separate battery_alerts table or in ride metrics
+      console.log('Battery alert:', batteryLevel)
+      // For now, just broadcast via realtime
+      const channel = supabase.channel('battery-alerts')
+      await channel.send({
+        type: 'broadcast',
+        event: 'battery-alert',
+        payload: {
+          userId: user.id,
+          batteryLevel,
+          timestamp: Date.now()
+        }
       })
+    } catch (error) {
+      console.error('Error sending battery alert:', error)
     }
-  }
+  }, [user])
 
-  // Chat functions
-  const sendMessage = (roomId, message) => {
-    if (socket && connected) {
-      socket.emit('send-message', {
-        roomId,
-        message,
-        userId: user._id,
-        timestamp: Date.now()
+  // Send helper alert (responding to emergency)
+  const sendHelperAlert = useCallback(async (helpData) => {
+    if (!user) return
+
+    try {
+      // Broadcast that user is responding to help
+      const channel = supabase.channel('helper-alerts')
+      await channel.send({
+        type: 'broadcast',
+        event: 'helper-alert',
+        payload: {
+          helperId: user.id,
+          ...helpData,
+          timestamp: Date.now()
+        }
       })
+    } catch (error) {
+      console.error('Error sending helper alert:', error)
     }
-  }
-
-  const joinChatRoom = (roomId) => {
-    if (socket && connected) {
-      socket.emit('join-chat-room', roomId)
-    }
-  }
-
-  const leaveChatRoom = (roomId) => {
-    if (socket && connected) {
-      socket.emit('leave-chat-room', roomId)
-    }
-  }
-
-  // Battery alert
-  const sendBatteryAlert = (batteryLevel) => {
-    if (socket && connected) {
-      socket.emit('battery-alert', {
-        userId: user._id,
-        batteryLevel,
-        timestamp: Date.now()
-      })
-    }
-  }
-
-  // Helper alert
-  const sendHelperAlert = (helpData) => {
-    if (socket && connected) {
-      socket.emit('helper-alert', {
-        ...helpData,
-        helperId: user._id,
-        timestamp: Date.now()
-      })
-    }
-  }
+  }, [user])
 
   const value = {
-    socket,
     connected,
     onlineUsers,
     updateLocation,
     joinRideGroup,
     leaveRideGroup,
     sendEmergencyAlert,
+    subscribeToEmergencyAlerts,
     sendMessage,
     joinChatRoom,
     leaveChatRoom,
     sendBatteryAlert,
-    sendHelperAlert
+    sendHelperAlert,
+    // Legacy compatibility - these are now handled differently
+    socket: null // No direct socket object in Supabase Realtime
   }
 
   return (

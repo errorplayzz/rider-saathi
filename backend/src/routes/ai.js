@@ -1,15 +1,12 @@
 import express from 'express'
 import axios from 'axios'
-import Groq from 'groq-sdk'
 import { auth } from '../middleware/auth.js'
 
 const router = express.Router()
 
-// Note: Don't initialize Groq at module load (env may not be ready); create per-request
-
 // Health check for AI routes
 router.get('/ping', (req, res) => {
-  const provider = process.env.GENERATIVE_PROVIDER || 'groq'
+  const provider = process.env.GENERATIVE_PROVIDER || 'openai'
   res.json({ success: true, message: 'AI route loaded', provider })
 })
 
@@ -18,16 +15,24 @@ router.get('/ping', (req, res) => {
 // @access  Private
 router.post('/gpt', auth, async (req, res) => {
   try {
-    const provider = process.env.GENERATIVE_PROVIDER || 'groq'
-    if (provider !== 'groq') {
-      return res.status(400).json({ success: false, message: 'Only GROQ provider is supported in this deployment. Set GENERATIVE_PROVIDER=groq in .env' })
+    const provider = process.env.GENERATIVE_PROVIDER || 'openai'
+
+    if (!process.env.OPENAI_API_KEY) {
+      // Demo fallback for local development when OpenAI API key is not configured
+      console.warn('OPENAI_API_KEY not configured - returning demo reply from /gpt')
+      return res.json({
+        success: true,
+        choices: [
+          {
+            message: {
+              content: "Demo reply: ChatGPT not configured on server. Add your OPENAI_API_KEY to backend .env file."
+            }
+          }
+        ]
+      })
     }
 
-    if (!process.env.GROQ_API_KEY) {
-      return res.status(500).json({ success: false, message: 'GROQ API key not configured on server' })
-    }
-
-  const model = process.env.GROQ_MODEL || 'llama-3.1-8b-instant'
+    const model = process.env.OPENAI_MODEL || 'gpt-3.5-turbo'
     const temperature = req.body?.temperature ?? 0.7
     const max_tokens = req.body?.max_tokens ?? 500
 
@@ -41,13 +46,36 @@ router.post('/gpt', auth, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing message(s)' })
     }
 
-  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
-  const completion = await groq.chat.completions.create({ model, messages, temperature, max_tokens })
+    // Call OpenAI API directly using axios
+    // Support both OpenAI and OpenRouter endpoints based on API key format
+    const apiEndpoint = process.env.OPENAI_API_KEY?.startsWith('sk-or-') 
+      ? 'https://openrouter.ai/api/v1/chat/completions'
+      : 'https://api.openai.com/v1/chat/completions'
+    
+    const response = await axios.post(
+      apiEndpoint,
+      {
+        model,
+        messages,
+        temperature,
+        max_tokens
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          ...(apiEndpoint.includes('openrouter') && {
+            'HTTP-Referer': 'http://localhost:5000',
+            'X-Title': 'Rider Saathi'
+          })
+        }
+      }
+    )
 
-    // Return OpenAI-compatible response so existing frontend parsing works
-    return res.json(completion)
+    // Return OpenAI response (already in correct format)
+    return res.json(response.data)
   } catch (error) {
-    console.error('GROQ Chatbot Error (/gpt):', error?.response?.data || error.message)
+    console.error('OpenAI Chatbot Error (/gpt):', error?.response?.data || error.message)
     const status = error?.response?.status || 500
     const data = error?.response?.data || { message: error.message }
     return res.status(status).json({ success: false, error: data })
@@ -60,16 +88,24 @@ router.post('/gpt', auth, async (req, res) => {
 // remove or protect it before deploying to production.
 router.post('/gpt-public', async (req, res) => {
   try {
-    const provider = process.env.GENERATIVE_PROVIDER || 'groq'
-    if (provider !== 'groq') {
-      return res.status(400).json({ success: false, message: 'Only GROQ provider is supported in this deployment. Set GENERATIVE_PROVIDER=groq in .env' })
+    const provider = process.env.GENERATIVE_PROVIDER || 'openai'
+
+    if (!process.env.OPENAI_API_KEY) {
+      // Demo fallback when API key not configured
+      console.warn('OPENAI_API_KEY not configured - returning demo reply from /gpt-public')
+      return res.json({
+        success: true,
+        choices: [
+          {
+            message: {
+              content: "Demo reply: ChatGPT not configured. Add OPENAI_API_KEY to your backend .env file to enable real AI responses."
+            }
+          }
+        ]
+      })
     }
 
-    if (!process.env.GROQ_API_KEY) {
-      return res.status(500).json({ success: false, message: 'GROQ API key not configured on server' })
-    }
-
-  const model = process.env.GROQ_MODEL || 'llama-3.1-8b-instant'
+    const model = process.env.OPENAI_MODEL || 'gpt-3.5-turbo'
     const temperature = req.body?.temperature ?? 0.7
     const max_tokens = req.body?.max_tokens ?? 500
 
@@ -82,13 +118,53 @@ router.post('/gpt-public', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing message(s)' })
     }
 
-  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
-  const completion = await groq.chat.completions.create({ model, messages, temperature, max_tokens })
-    return res.json(completion)
+    // Call OpenAI API
+    // Support both OpenAI and OpenRouter endpoints based on API key format
+    const apiEndpoint = process.env.OPENAI_API_KEY?.startsWith('sk-or-') 
+      ? 'https://openrouter.ai/api/v1/chat/completions'
+      : 'https://api.openai.com/v1/chat/completions'
+    
+    const response = await axios.post(
+      apiEndpoint,
+      {
+        model,
+        messages,
+        temperature,
+        max_tokens
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          ...(apiEndpoint.includes('openrouter') && {
+            'HTTP-Referer': 'http://localhost:5000',
+            'X-Title': 'Rider Saathi'
+          })
+        }
+      }
+    )
+
+    return res.json(response.data)
   } catch (error) {
-    console.error('GROQ Chatbot Error (/gpt-public):', error?.response?.data || error.message)
+    console.error('OpenAI Chatbot Error (/gpt-public):', error?.response?.data || error.message)
     const status = error?.response?.status || 500
     const data = error?.response?.data || { message: error.message }
+    
+    // Special handling for quota exceeded error - return demo response
+    if (data?.error?.code === 'insufficient_quota' || status === 429) {
+      console.warn('OpenAI quota exceeded - returning demo response')
+      return res.json({
+        success: true,
+        choices: [
+          {
+            message: {
+              content: "Hello! I'm your AI assistant for Rider Saathi. I can help you with navigation, emergency assistance, weather updates, and more. (Note: OpenAI quota exceeded - this is a demo response. Please add credits to your OpenAI account for real AI responses.)"
+            }
+          }
+        ]
+      })
+    }
+    
     return res.status(status).json({ success: false, error: data })
   }
 })
