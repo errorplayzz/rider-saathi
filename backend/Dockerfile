@@ -14,5 +14,6 @@ COPY . .
 # Expose port
 EXPOSE 5000
 
-# Start the application
-CMD ["npm", "run", "dev"]
+# Start the application (production)
+# Use the production start script rather than nodemon (dev) so Docker/Render runs stable process
+CMD ["npm", "run", "start"]
