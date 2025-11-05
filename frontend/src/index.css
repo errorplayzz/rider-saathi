@@ -93,6 +93,24 @@ body {
   background: linear-gradient(180deg, #bf00ff, #ff0080);
 }
 
+/* Custom scrollbar for notification dropdown */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #00ffff;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #bf00ff;
+}
+
 /* Leaflet map dark theme */
 .leaflet-container {
   background: #0a0a0a;

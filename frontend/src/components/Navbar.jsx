@@ -12,6 +12,7 @@ import {
   Bars3Icon,
   XMarkIcon
 } from '@heroicons/react/24/outline'
+import NotificationDropdown from './NotificationDropdown'
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false)
@@ -95,10 +96,16 @@ const Navbar = () => {
                 </Link>
               )
             })}
+            
+            {/* Notification Bell */}
+            <NotificationDropdown />
           </div>
 
           {/* Mobile menu button */}
-          <div className="md:hidden">
+          <div className="md:hidden flex items-center space-x-2">
+            {/* Mobile Notification Bell */}
+            <NotificationDropdown />
+            
             <motion.button
               whileTap={{ scale: 0.95 }}
               onClick={() => setIsOpen(!isOpen)}

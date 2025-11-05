@@ -68,35 +68,16 @@ const Home = () => {
               AI Navigation, and Real-time Communication for the Modern Rider
             </p>
             
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex justify-center items-center">
               <Link to="/dashboard">
                 <motion.button
                   whileHover={{ scale: 1.05, boxShadow: '0 0 30px #00ffff' }}
                   whileTap={{ scale: 0.95 }}
-                  className="btn-neon text-lg px-8 py-4"
+                  className="btn-neon text-lg px-8 py-4 mx-auto"
                 >
                   Start Your Journey
                 </motion.button>
               </Link>
-              
-              <button
-                onClick={() => {
-                  if (isAuthenticated) {
-                    navigate('/chatbot')
-                  } else {
-                    // Redirect to login and return to chatbot after successful login
-                    navigate('/login?next=/chatbot')
-                  }
-                }}
-              >
-                <motion.button
-                  whileHover={{ scale: 1.05, boxShadow: '0 0 30px #bf00ff' }}
-                  whileTap={{ scale: 0.95 }}
-                  className="btn-neon-purple text-lg px-8 py-4"
-                >
-                  AI Chat Bot
-                </motion.button>
-              </button>
             </div>
           </motion.div>
         </div>

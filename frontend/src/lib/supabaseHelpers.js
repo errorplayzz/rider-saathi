@@ -292,44 +292,86 @@ export const getRoomParticipants = async (roomId) => {
 // ============================================
 
 export const createEmergencyAlert = async (userId, alertType, severity, location, description = null) => {
+  const insertData = {
+    user_id: userId,
+    alert_type: alertType,
+    severity,
+    description,
+    status: 'active'
+  }
+
+  // Only add location if coordinates are available
+  if (location && location.longitude && location.latitude) {
+    insertData.location = `POINT(${location.longitude} ${location.latitude})`
+    if (location.address) {
+      insertData.address = location.address
+    }
+  }
+
   const { data, error } = await supabase
     .from('emergency_alerts')
-    .insert({
-      user_id: userId,
-      alert_type: alertType,
-      severity,
-      location: `POINT(${location.longitude} ${location.latitude})`,
-      address: location.address,
-      description
-    })
-    .select()
+    .insert(insertData)
+    .select('*')
     .single()
   
-  if (error) throw error
+  if (error) {
+    console.error('Supabase insert error:', error)
+    throw error
+  }
+  
+  // Fetch user profile separately to avoid join issues
+  if (data) {
+    try {
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('id, name, email, phone, avatar_url')
+        .eq('id', userId)
+        .single()
+      
+      if (userProfile) {
+        data.user = userProfile
+      }
+    } catch (profileError) {
+      console.log('Profile fetch failed, alert created without user data')
+    }
+  }
+  
   return data
 }
 
 export const getActiveEmergencyAlerts = async (longitude = null, latitude = null, radiusMeters = 50000) => {
-  let query = supabase
+  const { data, error } = await supabase
     .from('emergency_alerts')
-    .select(`
-      *,
-      user:profiles!emergency_alerts_user_id_fkey(id, name, phone, avatar_url)
-    `)
+    .select('*')
     .eq('status', 'active')
     .order('created_at', { ascending: false })
   
-  const { data, error } = await query
-  
-  if (error) throw error
-  
-  // Filter by distance in JavaScript if coordinates provided
-  if (longitude && latitude && data) {
-    // For production, you'd want to do this in SQL with PostGIS
-    return data
+  if (error) {
+    console.error('Fetch alerts error:', error)
+    throw error
   }
   
-  return data
+  // Fetch user profiles for each alert
+  if (data && data.length > 0) {
+    const alertsWithUsers = await Promise.all(
+      data.map(async (alert) => {
+        try {
+          const { data: userProfile } = await supabase
+            .from('profiles')
+            .select('id, name, email, phone, avatar_url')
+            .eq('id', alert.user_id)
+            .single()
+          
+          return { ...alert, user: userProfile }
+        } catch (err) {
+          return alert
+        }
+      })
+    )
+    return alertsWithUsers
+  }
+  
+  return data || []
 }
 
 export const respondToEmergency = async (alertId, responderId, message = null, estimatedArrival = null) => {

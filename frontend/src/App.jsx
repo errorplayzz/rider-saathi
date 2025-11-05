@@ -16,7 +16,6 @@ import Dashboard from './pages/Dashboard'
 import Map from './pages/Map'
 import Emergency from './pages/Emergency'
 import Chat from './pages/Chat'
-import Chatbot from './pages/Chatbot'
 import Profile from './pages/Profile'
 import FeatureDetails from './pages/FeatureDetails'
 import ForgotPassword from './pages/ForgotPassword'
@@ -24,6 +23,7 @@ import ForgotPassword from './pages/ForgotPassword'
 // Context
 import { AuthProvider } from './contexts/AuthContext'
 import { SocketProvider } from './contexts/SocketContext'
+import ChatWidget from './components/ChatWidget'
 
 function App() {
   const [loading, setLoading] = useState(true)
@@ -94,14 +94,7 @@ function App() {
                       } 
                     />
                     <Route path="/forgot-password" element={<ForgotPassword />} />
-                    <Route 
-                      path="/chatbot" 
-                      element={
-                        <ProtectedRoute>
-                          <Chatbot />
-                        </ProtectedRoute>
-                      } 
-                    />
+                    {/* Chatbot page removed in favor of floating widget */}
                     <Route 
                       path="/profile" 
                       element={
@@ -114,6 +107,8 @@ function App() {
                 </Suspense>
               </AnimatePresence>
             </main>
+            {/* Global floating chat widget (kept outside <main> so it overlays content) */}
+            <ChatWidget />
           </div>
         </Router>
       </SocketProvider>

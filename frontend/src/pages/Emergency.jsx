@@ -186,6 +186,12 @@ const Emergency = () => {
   }
 
   const sendEmergencyAlert = async (type) => {
+    // Check if user is logged in
+    if (!user || !user.id) {
+      alert('Please login to send emergency alerts')
+      return
+    }
+
     try {
       // Ensure we have a location; try to request one if missing
       let loc = userLocation
@@ -207,24 +213,31 @@ const Emergency = () => {
       }
 
       // If still no loc, send a placeholder (backend prefers location but may accept nulls)
-      const payload = {
-        user_id: user.id,
-        alert_type: type,
-        location: loc ? {
-          type: 'Point',
-          coordinates: [loc.longitude, loc.latitude]
-        } : null,
-        description: `${type} emergency alert`,
-        severity: type === 'medical' || type === 'fire' ? 'high' : 'medium'
+      const severity = type === 'medical' || type === 'fire' ? 'high' : 'medium'
+      const description = `${type} emergency alert`
+      
+      // Default location if not available
+      const alertLocation = loc || { 
+        longitude: 77.1025, 
+        latitude: 28.7041, 
+        address: 'Location unavailable' 
       }
 
-      const alert = await createEmergencyAlert(payload)
+      const alert = await createEmergencyAlert(
+        user.id,
+        type,
+        severity,
+        alertLocation,
+        description
+      )
 
+      console.log('✅ Emergency alert created:', alert)
       setActiveAlert(alert)
 
       // Emit via socket for real-time updates
       if (socket) {
         socket.emit('emergency-alert', alert)
+        console.log('📡 Alert sent via socket')
       }
 
       // Play a subtle alert sound
@@ -234,20 +247,29 @@ const Emergency = () => {
         const g = ctx.createGain()
         o.type = 'sine'
         o.frequency.value = 880
-        g.gain.value = 0.02
+        g.gain.value = 0.03
         o.connect(g)
         g.connect(ctx.destination)
         o.start()
-        setTimeout(() => { o.stop(); ctx.close() }, 250)
+        setTimeout(() => { o.stop(); ctx.close() }, 300)
       } catch (e) {
         // ignore sound errors
+        console.log('🔇 Audio not available')
       }
 
       // Show toast notification
-      setToast({ message: '🚨 Emergency alert sent! Help is on the way.', type: 'danger' })
-      setTimeout(() => setToast(null), 3500)
+      const emergencyType = emergencyTypes.find(e => e.type === type)
+      setToast({ 
+        message: `${emergencyType?.emoji || '🚨'} ${emergencyType?.title || type.toUpperCase()} alert sent! Help is on the way.`, 
+        type: 'success' 
+      })
+      setTimeout(() => setToast(null), 4000)
+      
+      // Refresh nearby alerts
+      fetchNearbyAlerts()
+      
     } catch (error) {
-      console.error('Alert send error:', error)
+      console.error('❌ Alert send error:', error)
       // If backend returned validation error about location, suggest enabling location
       const backendMessage = error.response?.data?.message
       if (backendMessage) {
@@ -461,11 +483,30 @@ const Emergency = () => {
           </div>
         </motion.div>
 
-        {/* Toast / alert popup */}
+        {/* Toast Notification */}
         {toast && (
-          <div className="alert-popup" style={{ zIndex: 9999 }}>
-            {toast.message}
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: -50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -50 }}
+            className={`fixed top-20 right-4 z-[100] max-w-md p-4 rounded-lg shadow-2xl border-l-4 ${
+              toast.type === 'success' 
+                ? 'bg-green-900/90 border-green-500 text-green-100' 
+                : toast.type === 'danger'
+                ? 'bg-red-900/90 border-red-500 text-red-100'
+                : 'bg-orange-900/90 border-orange-500 text-orange-100'
+            } backdrop-blur-md`}
+          >
+            <div className="flex items-center space-x-3">
+              <div className="flex-1 font-medium">{toast.message}</div>
+              <button
+                onClick={() => setToast(null)}
+                className="text-white/70 hover:text-white"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+          </motion.div>
         )}
 
         {/* Emergency Contacts & Nearby Alerts */}

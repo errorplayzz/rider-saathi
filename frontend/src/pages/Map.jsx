@@ -321,14 +321,6 @@ const Map = () => {
             </div>
           </Popup>
         </Marker>
-        {/* Accuracy circle showing GPS uncertainty */}
-        {accuracy != null && (
-          <Circle
-            center={[userLocation.lat, userLocation.lng]}
-            radius={Math.max(5, accuracy)}
-            pathOptions={{ color: '#007bff', weight: 1, opacity: 0.4, fillOpacity: 0.08 }}
-          />
-        )}
 
         {/* Destination marker */}
         {destination && (
@@ -380,7 +372,7 @@ const Map = () => {
         ))}
 
         {/* Emergency alert markers */}
-        {emergencyAlerts.map((alert) => (
+        {emergencyAlerts.filter(alert => alert.location && alert.location.coordinates && alert.location.coordinates.length >= 2).map((alert) => (
           <Marker
             key={alert.id}
             position={[alert.location.coordinates[1], alert.location.coordinates[0]]}
@@ -391,7 +383,7 @@ const Map = () => {
                 <h3 className="font-bold text-red-600">🚨 {alert.type.toUpperCase()}</h3>
                 <p className="text-sm text-gray-600">{alert.description}</p>
                 <p className="text-xs text-gray-500">
-                  Distance: {Math.round(alert.distance)} m
+                  Distance: {alert.distance ? Math.round(alert.distance) : 'N/A'} m
                 </p>
                 <p className="text-xs text-gray-500">
                   Reported: {new Date(alert.createdAt).toLocaleTimeString()}
