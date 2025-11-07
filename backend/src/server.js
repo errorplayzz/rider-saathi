@@ -8,11 +8,13 @@ import compression from 'compression'
 import rateLimit from 'express-rate-limit'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
-import mongoose from 'mongoose'
 import dotenv from 'dotenv'
 
 // Load env BEFORE importing any route that might read process.env at module scope
 dotenv.config()
+
+// Import Supabase config instead of MongoDB
+import { connectSupabase } from './config/supabase.js'
 
 // Import routes
 import authRoutes from './routes/auth.js'
@@ -177,14 +179,13 @@ app.use('*', (req, res) => {
 // Database connection
 const connectDB = async () => {
   try {
-    const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/rider_sathi'
-    console.log('Attempting to connect to MongoDB...')
-    const conn = await mongoose.connect(mongoUri, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    })
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`)
-    return true
+    console.log('Attempting to connect to Supabase...')
+    const connected = await connectSupabase()
+    if (connected) {
+      console.log('✅ Supabase Connected successfully')
+      return true
+    }
+    return false
   } catch (error) {
     console.error('❌ Database connection error:', error.message)
     console.log('🔄 Running without database - some features will be limited')
@@ -217,7 +218,7 @@ process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully')
   server.close(() => {
     console.log('Process terminated')
-    mongoose.connection.close()
+    // Supabase connections are automatically managed
   })
 })
 
@@ -225,7 +226,7 @@ process.on('SIGINT', () => {
   console.log('SIGINT received, shutting down gracefully')
   server.close(() => {
     console.log('Process terminated')
-    mongoose.connection.close()
+    // Supabase connections are automatically managed
   })
 })
 

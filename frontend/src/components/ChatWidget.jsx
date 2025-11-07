@@ -28,101 +28,76 @@ const ChatWidget = () => {
     }
   }, [messages, open])
 
-  const appendMessage = (text, cls) => {
-    setMessages(prev => [...prev, { text, cls }])
-  }
-
-  const apiPost = async (payload) => {
-    const apiBase = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || window.location.origin
-    const gptUrl = `${apiBase.replace(/\/$/, '')}/api/ai/gpt`
-
-    const headers = { 'Content-Type': 'application/json' }
-    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
-
-    let res = await fetch(gptUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload)
-    })
-
-    // fallback to public testing endpoint if unauthorized
-    if (res.status === 401) {
-      const publicUrl = `${apiBase.replace(/\/$/, '')}/api/ai/gpt-public`
-      res = await fetch(publicUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      })
+  // SIMPLE MESSAGE APPENDER - NO JSON ALLOWED
+  const addMessage = (text, isUser = false) => {
+    // NEVER allow JSON objects in messages
+    let cleanText = ''
+    
+    if (typeof text === 'string') {
+      // Check if it's a JSON response
+      if (text.startsWith('{"id":"gen-') || text.includes('"provider":"OpenAI"')) {
+        cleanText = "Sorry, I'm having trouble processing that. Please try again."
+      } else {
+        cleanText = text
+      }
+    } else {
+      cleanText = "I received your message."
     }
-
-    return res
+    
+    setMessages(prev => [...prev, { 
+      text: cleanText, 
+      isUser, 
+      id: Date.now() + Math.random() 
+    }])
   }
 
   const sendMessage = async () => {
-    const content = input.trim()
-    if (!content) return
-    appendMessage(content, 'user')
+    const userMessage = input.trim()
+    if (!userMessage) return
+    
+    // Add user message
+    addMessage(userMessage, true)
     setInput('')
-
-    // placeholder bot message we will update
-    appendMessage('', 'bot')
     setLoading(true)
 
     try {
-      const recentMessages = messages
-        .filter(m => m.text)
-        .map(m => ({ role: m.cls === 'user' ? 'user' : 'assistant', content: m.text }))
+      const apiBase = window.location.origin
+      const response = await fetch(`${apiBase}/api/ai/gpt-public`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMessage })
+      })
 
-      recentMessages.push({ role: 'user', content })
-
-      const payload = { messages: recentMessages }
-
-      const res = await apiPost(payload)
-
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}))
-        throw new Error(errBody?.message || `AI API returned ${res.status}`)
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`)
       }
 
-      // If streaming body available, read it
-      if (res.body && res.body.getReader) {
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        let done = false
-        let acc = ''
-
-        while (!done) {
-          const { value, done: d } = await reader.read()
-          done = d
-          if (value) {
-            const chunk = decoder.decode(value, { stream: true })
-            acc += chunk
-            // Update last bot message with progressive text
-            setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, text: acc } : m))
-          }
-        }
-
-        // finished streaming — ensure final text is present
-        if (acc) {
-          setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, text: acc, cls: 'bot' } : m))
-        }
+      const data = await response.json()
+      
+      // EXTRACT ONLY THE MESSAGE CONTENT
+      let botReply = ''
+      
+      if (data?.choices?.[0]?.message?.content) {
+        botReply = data.choices[0].message.content
       } else {
-        // non-streaming JSON response
-        const data = await res.json()
-        const replyText = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || data?.responses?.[0] || data?.message || data?.output || (typeof data === 'string' ? data : null)
-        const finalReply = (replyText && String(replyText)) || "I'm sorry, I couldn't generate a reply."
-        setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, text: finalReply, cls: 'bot' } : m))
+        botReply = "Sorry, I couldn't process your request properly."
       }
-    } catch (err) {
-      console.error('Chat widget error:', err)
-      setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, text: 'Error: ' + (err.message || 'unknown'), cls: 'bot' } : m))
+      
+      // Add bot message
+      addMessage(botReply, false)
+      
+    } catch (error) {
+      addMessage("Sorry, I'm having technical difficulties. Please try again later.", false)
     } finally {
       setLoading(false)
     }
   }
 
   const onKeyDown = (e) => {
-    if (e.key === 'Enter') sendMessage()
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendMessage()
+    }
   }
 
   return (
@@ -137,8 +112,8 @@ const ChatWidget = () => {
           <span className="rs-robot">🤖</span>
         </button>
 
-  {/* Panel */}
-  <div className={`rs-chat-panel`} ref={containerRef}>
+        {/* Panel */}
+        <div className={`rs-chat-panel`} ref={containerRef}>
           <div className="rs-chat-header">
             <div className="rs-chat-title">Rider Saathi — AI Assistant</div>
             <button className="rs-close" onClick={() => setOpen(false)} aria-label="Close chat">✕</button>
@@ -146,12 +121,12 @@ const ChatWidget = () => {
 
           <div className="rs-chat-body" ref={chatRef} role="log" aria-live="polite">
             {messages.length === 0 && (
-              <div className="rs-empty">Ask me anything about Rider Saathi — features, navigation, or emergency assistance.</div>
+              <div className="rs-empty">Ask me anything about Rider Saathi!</div>
             )}
 
-            {messages.map((m, i) => (
-              <div key={i} className={`rs-msg ${m.cls === 'user' ? 'user' : 'bot'}`}>
-                {m.text}
+            {messages.map((msg) => (
+              <div key={msg.id} className={`rs-msg ${msg.isUser ? 'user' : 'bot'}`}>
+                {msg.text}
               </div>
             ))}
 
@@ -168,7 +143,11 @@ const ChatWidget = () => {
               placeholder="Ask Rider Saathi..."
               className="rs-input"
             />
-            <button className="rs-send" onClick={sendMessage} disabled={loading || !input.trim()}>
+            <button 
+              className="rs-send" 
+              onClick={sendMessage} 
+              disabled={loading || !input.trim()}
+            >
               {loading ? '...' : 'Send'}
             </button>
           </div>

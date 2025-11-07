@@ -72,8 +72,20 @@ router.post('/gpt', auth, async (req, res) => {
       }
     )
 
-    // Return OpenAI response (already in correct format)
-    return res.json(response.data)
+    // Extract and return only the message content, not the full OpenAI response
+    const messageContent = response.data?.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.'
+    
+    return res.json({
+      success: true,
+      message: messageContent,
+      choices: [
+        {
+          message: {
+            content: messageContent
+          }
+        }
+      ]
+    })
   } catch (error) {
     console.error('OpenAI Chatbot Error (/gpt):', error?.response?.data || error.message)
     const status = error?.response?.status || 500
@@ -144,7 +156,20 @@ router.post('/gpt-public', async (req, res) => {
       }
     )
 
-    return res.json(response.data)
+    // Extract and return only the message content, not the full OpenAI response
+    const messageContent = response.data?.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.'
+    
+    return res.json({
+      success: true,
+      message: messageContent,
+      choices: [
+        {
+          message: {
+            content: messageContent
+          }
+        }
+      ]
+    })
   } catch (error) {
     console.error('OpenAI Chatbot Error (/gpt-public):', error?.response?.data || error.message)
     const status = error?.response?.status || 500
