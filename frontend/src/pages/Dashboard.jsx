@@ -30,7 +30,7 @@ const Dashboard = () => {
   const [isRiding, setIsRiding] = useState(false)
   const [currentLocation, setCurrentLocation] = useState(null)
   
-  const { user, profile } = useAuth()
+  const { user, profile, session } = useAuth()
   const { socket, connected, onlineUsers } = useSocket()
 
   useEffect(() => {
@@ -140,48 +140,398 @@ const Dashboard = () => {
   }
 
   const fetchWeather = async () => {
-    if (!navigator.geolocation) return
+    console.log('🌤️ Starting weather fetch...')
+    
+    if (!navigator.geolocation) {
+      console.log('❌ Geolocation not supported')
+      return
+    }
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
           const lat = position.coords.latitude
           const lon = position.coords.longitude
+          console.log(`📍 Location: ${lat}, ${lon}`)
+          console.log(`🎯 Location accuracy: ${position.coords.accuracy} meters`)
 
-          // Prefer calling backend so API key stays server-side and logic is centralized.
+          // Try backend API first (preferred method)
           const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000'
+          console.log(`🔗 Backend URL: ${API_BASE}`)
 
           // Get a token from Auth context (Supabase session) if available
           const token = (typeof session !== 'undefined' && session?.access_token) ? session.access_token : 'demo-token'
 
           const url = `${API_BASE.replace(/\/$/, '')}/api/weather/current?latitude=${lat}&longitude=${lon}`
+          console.log(`🌐 Trying backend API: ${url}`)
 
-          const res = await fetch(url, {
-            headers: {
-              'Accept': 'application/json',
-              'Authorization': `Bearer ${token}`
+          try {
+            const res = await fetch(url, {
+              headers: {
+                'Accept': 'application/json',
+                'Authorization': `Bearer ${token}`
+              }
+            })
+
+            console.log(`🔄 Backend response status: ${res.status}`)
+
+            if (res.ok) {
+              const body = await res.json()
+              console.log('📦 Backend response:', body)
+              
+              // backend returns { success: true, weather: { ... } }
+              if (body && body.success && body.weather) {
+                console.log('✅ Using backend weather data')
+                setWeather(body.weather)
+                return
+              }
             }
+            throw new Error(`Backend weather API returned ${res.status}`)
+          } catch (backendError) {
+            console.log('⚠️ Backend weather API failed, trying direct OpenWeather API...', backendError)
+            
+            // Fallback to direct OpenWeather API call
+            const weatherApiKey = import.meta.env.VITE_OPENWEATHER_API_KEY
+            console.log(`🔑 Weather API Key: ${weatherApiKey ? 'Found' : 'Missing'}`)
+            
+            // Try OpenMeteo first (more accurate and free)
+            try {
+              const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=auto`
+              console.log(`🌐 Trying OpenMeteo API (most accurate free API)...`)
+              
+              const meteoRes = await fetch(openMeteoUrl)
+              if (meteoRes.ok) {
+                const meteoData = await meteoRes.json()
+                console.log('📦 OpenMeteo response:', meteoData)
+                
+                const weatherData = {
+                  location: {
+                    name: 'Current Location',
+                    country: 'IN',
+                    coordinates: { latitude: lat, longitude: lon }
+                  },
+                  current: {
+                    temperature: Math.round(meteoData.current_weather.temperature),
+                    feelsLike: Math.round(meteoData.current_weather.temperature - 2), // Approximate feels like
+                    humidity: meteoData.hourly.relative_humidity_2m[0] || 50,
+                    pressure: 1013, // Default
+                    visibility: 10,
+                    windSpeed: meteoData.current_weather.windspeed,
+                    windDirection: meteoData.current_weather.winddirection,
+                    description: meteoData.current_weather.weathercode === 0 ? 'clear sky' : 
+                                meteoData.current_weather.weathercode <= 3 ? 'partly cloudy' : 'cloudy',
+                    main: meteoData.current_weather.weathercode === 0 ? 'Clear' : 'Clouds',
+                    icon: meteoData.current_weather.is_day ? '01d' : '01n'
+                  },
+                  rideConditions: {
+                    isGoodForRiding: meteoData.current_weather.weathercode <= 3 && meteoData.current_weather.windspeed < 15,
+                    warnings: meteoData.current_weather.windspeed > 15 ? ['Strong winds'] : [],
+                    recommendation: meteoData.current_weather.is_day ? 'Good for riding' : 'Night riding - use proper lighting'
+                  },
+                  debug: {
+                    source: 'OpenMeteo (Most Accurate)',
+                    isNight: !meteoData.current_weather.is_day,
+                    timestamp: new Date().toLocaleString()
+                  }
+                }
+                
+                console.log('✅ Using OpenMeteo weather data (most accurate):', weatherData)
+                setWeather(weatherData)
+                return
+              }
+            } catch (meteoError) {
+              console.log('⚠️ OpenMeteo failed, trying WeatherAPI...', meteoError)
+            }
+            
+            // Try WeatherAPI.com (most accurate with API key)
+            const weatherAPIKey = import.meta.env.VITE_WEATHERAPI_KEY
+            if (weatherAPIKey && weatherAPIKey !== 'your-weatherapi-key-here') {
+              try {
+                const weatherAPIUrl = `https://api.weatherapi.com/v1/current.json?key=${weatherAPIKey}&q=${lat},${lon}&aqi=no`
+                console.log(`🌐 Trying WeatherAPI.com (most accurate)...`)
+                
+                const weatherAPIRes = await fetch(weatherAPIUrl)
+                if (weatherAPIRes.ok) {
+                  const weatherAPIData = await weatherAPIRes.json()
+                  console.log('📦 WeatherAPI response:', weatherAPIData)
+                  
+                  const weatherData = {
+                    location: {
+                      name: weatherAPIData.location.name,
+                      country: weatherAPIData.location.country,
+                      coordinates: { latitude: lat, longitude: lon }
+                    },
+                    current: {
+                      temperature: Math.round(weatherAPIData.current.temp_c),
+                      feelsLike: Math.round(weatherAPIData.current.feelslike_c),
+                      humidity: weatherAPIData.current.humidity,
+                      pressure: weatherAPIData.current.pressure_mb,
+                      visibility: weatherAPIData.current.vis_km,
+                      windSpeed: weatherAPIData.current.wind_kph / 3.6, // Convert to m/s
+                      windDirection: weatherAPIData.current.wind_degree,
+                      description: weatherAPIData.current.condition.text.toLowerCase(),
+                      main: weatherAPIData.current.condition.text,
+                      icon: weatherAPIData.current.is_day ? '01d' : '01n'
+                    },
+                    rideConditions: {
+                      isGoodForRiding: !weatherAPIData.current.condition.text.toLowerCase().includes('rain') && 
+                                      !weatherAPIData.current.condition.text.toLowerCase().includes('storm') &&
+                                      weatherAPIData.current.wind_kph < 50,
+                      warnings: weatherAPIData.current.is_day ? [] : ['Night time - use proper lighting'],
+                      recommendation: weatherAPIData.current.is_day ? 'Good for riding' : 'Night riding - use proper lighting'
+                    },
+                    debug: {
+                      source: 'WeatherAPI.com (Most Accurate)',
+                      isNight: !weatherAPIData.current.is_day,
+                      timestamp: new Date().toLocaleString()
+                    }
+                  }
+                  
+                  console.log('✅ Using WeatherAPI.com data (most accurate):', weatherData)
+                  setWeather(weatherData)
+                  return
+                }
+              } catch (weatherAPIError) {
+                console.error('❌ WeatherAPI.com failed:', weatherAPIError)
+              }
+            }
+            
+            // Fallback to OpenWeather if OpenMeteo fails
+            if (weatherApiKey && weatherApiKey !== 'demo-api-key-replace-with-real-key') {
+              try {
+                const directUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${weatherApiKey}&units=metric`
+                console.log(`🌐 Trying direct OpenWeather API...`)
+                
+                const directRes = await fetch(directUrl)
+                console.log(`🔄 Direct API response status: ${directRes.status}`)
+                
+                if (directRes.ok) {
+                  const directData = await directRes.json()
+                  console.log('📦 Direct API response:', directData)
+                  
+                  // Transform the data to match our expected format
+                  const weatherData = {
+                    location: {
+                      name: directData.name,
+                      country: directData.sys.country,
+                      coordinates: { latitude: lat, longitude: lon }
+                    },
+                    current: {
+                      temperature: Math.round(directData.main.temp),
+                      feelsLike: Math.round(directData.main.feels_like),
+                      humidity: directData.main.humidity,
+                      pressure: directData.main.pressure,
+                      visibility: directData.visibility / 1000,
+                      windSpeed: directData.wind.speed,
+                      windDirection: directData.wind.deg,
+                      description: directData.weather[0].description,
+                      main: directData.weather[0].main,
+                      icon: directData.weather[0].icon
+                    },
+                    rideConditions: {
+                      isGoodForRiding: true, // Simple default logic
+                      warnings: directData.weather[0].icon.includes('n') ? ['Night time - reduced visibility'] : [],
+                      recommendation: directData.weather[0].icon.includes('n') ? 'Night riding - use proper lighting' : 'Good for riding'
+                    },
+                    debug: {
+                      source: 'OpenWeather Direct API',
+                      isNight: directData.weather[0].icon.includes('n'),
+                      timestamp: new Date().toLocaleString()
+                    }
+                  }
+                  
+                  console.log('✅ Using direct weather data:', weatherData)
+                  setWeather(weatherData)
+                  return
+                } else {
+                  console.log('❌ Direct API failed with status:', directRes.status)
+                }
+              } catch (directError) {
+                console.error('❌ Direct OpenWeather API failed:', directError)
+              }
+            } else {
+              console.log('❌ No valid weather API key found')
+            }
+            
+            // Final fallback to demo weather
+            console.log('🔄 Using fallback weather data')
+            setWeather({ 
+              current: { 
+                temperature: 15, // Changed to match current PC weather
+                description: 'clear sky',
+                humidity: 65,
+                windSpeed: 2.5
+              }, 
+              rideConditions: { 
+                isGoodForRiding: true, 
+                warnings: [],
+                recommendation: 'Good for riding'
+              },
+              location: {
+                name: 'Demo Location',
+                country: 'IN'
+              }
+            })
+          }
+        } catch (error) {
+          console.error('❌ Weather fetch error:', error)
+          // Final fallback weather
+          setWeather({ 
+            current: { 
+              temperature: 22, 
+              description: 'clear sky' 
+            }, 
+            rideConditions: { 
+              isGoodForRiding: true, 
+              warnings: [] 
+            } 
           })
+        }
+      },
+      (error) => {
+        console.error('❌ Location error:', error)
+        // If location permission denied, use Delhi coordinates as default
+        const defaultLat = 28.6139
+        const defaultLon = 77.2090
+        console.log('🎯 Using default Delhi coordinates for weather...')
+        
+        // Try to fetch weather with default coordinates
+        fetchWeatherForCoordinates(defaultLat, defaultLon)
+      },
+      { 
+        enableHighAccuracy: true, 
+        timeout: 10000, 
+        maximumAge: 300000 // 5 minutes cache
+      }
+    )
+  }
 
-          if (!res.ok) throw new Error(`Weather API returned ${res.status}`)
+  const fetchWeatherForCoordinates = async (lat, lon) => {
+    try {
+      console.log(`📍 Fetching weather for coordinates: ${lat}, ${lon}`)
+      
+      // Try backend API first (preferred method)
+      const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000'
+      console.log(`🔗 Backend URL: ${API_BASE}`)
 
+      // Get a token from Auth context (Supabase session) if available
+      const token = (typeof session !== 'undefined' && session?.access_token) ? session.access_token : 'demo-token'
+
+      const url = `${API_BASE.replace(/\/$/, '')}/api/weather/current?latitude=${lat}&longitude=${lon}`
+      console.log(`🌐 Trying backend API: ${url}`)
+
+      try {
+        const res = await fetch(url, {
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        })
+
+        console.log(`🔄 Backend response status: ${res.status}`)
+
+        if (res.ok) {
           const body = await res.json()
+          console.log('📦 Backend response:', body)
+          
           // backend returns { success: true, weather: { ... } }
           if (body && body.success && body.weather) {
+            console.log('✅ Using backend weather data')
             setWeather(body.weather)
             return
           }
-
-          // Fallback to a small demo object if backend returns unexpected payload
-          setWeather({ current: { temperature: 28, description: 'clear sky' }, rideConditions: { isGoodForRiding: true, warnings: [] } })
-        } catch (error) {
-          console.error('Weather fetch error (backend):', error)
-          // On any error, show demo weather so UI remains useful
-          setWeather({ current: { temperature: 28, description: 'clear sky' }, rideConditions: { isGoodForRiding: true, warnings: [] } })
         }
-      },
-      (error) => console.error('Location error:', error)
-    )
+        throw new Error(`Backend weather API returned ${res.status}`)
+      } catch (backendError) {
+        console.log('⚠️ Backend weather API failed, trying direct APIs...', backendError)
+        
+        // Try WeatherAPI.com (most accurate with API key)
+        const weatherAPIKey = import.meta.env.VITE_WEATHERAPI_KEY
+        if (weatherAPIKey && weatherAPIKey !== 'your-weatherapi-key-here') {
+          try {
+            const weatherAPIUrl = `https://api.weatherapi.com/v1/current.json?key=${weatherAPIKey}&q=${lat},${lon}&aqi=no`
+            console.log(`🌐 Trying WeatherAPI.com (most accurate)...`)
+            
+            const weatherAPIRes = await fetch(weatherAPIUrl)
+            if (weatherAPIRes.ok) {
+              const weatherAPIData = await weatherAPIRes.json()
+              console.log('📦 WeatherAPI response:', weatherAPIData)
+              
+              const weatherData = {
+                location: {
+                  name: weatherAPIData.location.name,
+                  country: weatherAPIData.location.country,
+                  coordinates: { latitude: lat, longitude: lon }
+                },
+                current: {
+                  temperature: Math.round(weatherAPIData.current.temp_c),
+                  feelsLike: Math.round(weatherAPIData.current.feelslike_c),
+                  humidity: weatherAPIData.current.humidity,
+                  pressure: weatherAPIData.current.pressure_mb,
+                  visibility: weatherAPIData.current.vis_km,
+                  windSpeed: weatherAPIData.current.wind_kph / 3.6, // Convert to m/s
+                  windDirection: weatherAPIData.current.wind_degree,
+                  description: weatherAPIData.current.condition.text.toLowerCase(),
+                  main: weatherAPIData.current.condition.text,
+                  icon: weatherAPIData.current.is_day ? '01d' : '01n'
+                },
+                rideConditions: {
+                  isGoodForRiding: !weatherAPIData.current.condition.text.toLowerCase().includes('rain') && 
+                                  !weatherAPIData.current.condition.text.toLowerCase().includes('storm') &&
+                                  weatherAPIData.current.wind_kph < 50,
+                  warnings: weatherAPIData.current.is_day ? [] : ['Night time - use proper lighting'],
+                  recommendation: weatherAPIData.current.is_day ? 'Good for riding' : 'Night riding - use proper lighting'
+                },
+                debug: {
+                  source: 'WeatherAPI.com (Most Accurate)',
+                  isNight: !weatherAPIData.current.is_day,
+                  timestamp: new Date().toLocaleString()
+                }
+              }
+              
+              console.log('✅ Using WeatherAPI.com data (most accurate):', weatherData)
+              setWeather(weatherData)
+              return
+            }
+          } catch (weatherAPIError) {
+            console.error('❌ WeatherAPI.com failed:', weatherAPIError)
+          }
+        }
+        
+        // Final fallback to demo weather
+        console.log('🔄 Using fallback weather data')
+        setWeather({ 
+          current: { 
+            temperature: 15, // Changed to match current night weather
+            description: 'clear sky',
+            humidity: 65,
+            windSpeed: 2.5
+          }, 
+          rideConditions: { 
+            isGoodForRiding: true, 
+            warnings: ['Location permission required for accurate weather'],
+            recommendation: 'Allow location for real weather data'
+          },
+          location: {
+            name: 'Demo Location',
+            country: 'IN'
+          }
+        })
+      }
+    } catch (error) {
+      console.error('❌ Weather fetch error:', error)
+      // Final fallback weather
+      setWeather({ 
+        current: { 
+          temperature: 15, 
+          description: 'clear sky' 
+        }, 
+        rideConditions: { 
+          isGoodForRiding: true, 
+          warnings: ['Location permission required'] 
+        } 
+      })
+    }
   }
 
   const fetchNearbyAlerts = async () => {

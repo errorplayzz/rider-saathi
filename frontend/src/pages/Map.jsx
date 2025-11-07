@@ -188,10 +188,155 @@ const Map = () => {
 
   const fetchWeather = async (lat, lng) => {
     try {
-      // Weather API - can be integrated with external service later
-      console.log('Weather feature - add external API integration')
+      // Try backend API first (preferred method)
+      const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000'
+      const token = (typeof session !== 'undefined' && session?.access_token) ? session.access_token : 'demo-token'
+
+      const url = `${API_BASE.replace(/\/$/, '')}/api/weather/current?latitude=${lat}&longitude=${lng}`
+
+      try {
+        const res = await fetch(url, {
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        })
+
+        if (res.ok) {
+          const body = await res.json()
+          if (body && body.success && body.weather) {
+            setWeather(body.weather)
+            return
+          }
+        }
+        throw new Error(`Backend weather API returned ${res.status}`)
+      } catch (backendError) {
+        console.log('Backend weather API failed, trying direct OpenWeather API...', backendError)
+        
+        // Fallback to direct OpenWeather API call
+        const weatherApiKey = import.meta.env.VITE_OPENWEATHER_API_KEY
+        
+        // Try OpenMeteo first (more accurate and free)
+        try {
+          const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=auto`
+          console.log(`🌐 Trying OpenMeteo API (most accurate free API)...`)
+          
+          const meteoRes = await fetch(openMeteoUrl)
+          if (meteoRes.ok) {
+            const meteoData = await meteoRes.json()
+            console.log('📦 OpenMeteo response:', meteoData)
+            
+            const weatherData = {
+              location: {
+                name: 'Current Location',
+                country: 'IN',
+                coordinates: { latitude: lat, longitude: lng }
+              },
+              current: {
+                temperature: Math.round(meteoData.current_weather.temperature),
+                feelsLike: Math.round(meteoData.current_weather.temperature - 2),
+                humidity: meteoData.hourly.relative_humidity_2m[0] || 50,
+                pressure: 1013,
+                visibility: 10,
+                windSpeed: meteoData.current_weather.windspeed,
+                windDirection: meteoData.current_weather.winddirection,
+                description: meteoData.current_weather.weathercode === 0 ? 'clear sky' : 
+                            meteoData.current_weather.weathercode <= 3 ? 'partly cloudy' : 'cloudy',
+                main: meteoData.current_weather.weathercode === 0 ? 'Clear' : 'Clouds',
+                icon: meteoData.current_weather.is_day ? '01d' : '01n'
+              },
+              rideConditions: {
+                isGoodForRiding: meteoData.current_weather.weathercode <= 3 && meteoData.current_weather.windspeed < 15,
+                warnings: meteoData.current_weather.windspeed > 15 ? ['Strong winds'] : [],
+                recommendation: meteoData.current_weather.is_day ? 'Good for riding' : 'Night riding - use proper lighting'
+              }
+            }
+            
+            console.log('✅ Using OpenMeteo weather data (most accurate):', weatherData)
+            setWeather(weatherData)
+            return
+          }
+        } catch (meteoError) {
+          console.log('⚠️ OpenMeteo failed, trying OpenWeather...', meteoError)
+        }
+        
+        // Fallback to OpenWeather if OpenMeteo fails
+        if (weatherApiKey && weatherApiKey !== 'demo-api-key-replace-with-real-key') {
+          try {
+            const directUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${weatherApiKey}&units=metric`
+            
+            const directRes = await fetch(directUrl)
+            if (directRes.ok) {
+              const directData = await directRes.json()
+              
+              // Transform the data to match our expected format
+              const weatherData = {
+                location: {
+                  name: directData.name,
+                  country: directData.sys.country,
+                  coordinates: { latitude: lat, longitude: lng }
+                },
+                current: {
+                  temperature: Math.round(directData.main.temp),
+                  feelsLike: Math.round(directData.main.feels_like),
+                  humidity: directData.main.humidity,
+                  pressure: directData.main.pressure,
+                  visibility: directData.visibility / 1000,
+                  windSpeed: directData.wind.speed,
+                  windDirection: directData.wind.deg,
+                  description: directData.weather[0].description,
+                  main: directData.weather[0].main,
+                  icon: directData.weather[0].icon
+                },
+                rideConditions: {
+                  isGoodForRiding: !['rain', 'storm', 'snow'].some(condition => 
+                    directData.weather[0].main.toLowerCase().includes(condition)
+                  ) && directData.wind.speed <= 15 && directData.main.temp > 0 && directData.main.temp < 40,
+                  warnings: [],
+                  recommendation: 'Check weather conditions'
+                }
+              }
+              
+              setWeather(weatherData)
+              return
+            }
+          } catch (directError) {
+            console.error('Direct OpenWeather API failed:', directError)
+          }
+        }
+        
+        // Final fallback
+        setWeather({
+          current: { 
+            temperature: 22, 
+            description: 'clear sky',
+            humidity: 65,
+            windSpeed: 2.5
+          },
+          rideConditions: { 
+            isGoodForRiding: true, 
+            warnings: [],
+            recommendation: 'Good for riding'
+          },
+          location: {
+            name: 'Current Location',
+            country: 'IN'
+          }
+        })
+      }
     } catch (error) {
       console.error('Weather fetch error:', error)
+      // Set fallback weather data
+      setWeather({
+        current: { 
+          temperature: 22, 
+          description: 'clear sky' 
+        },
+        rideConditions: { 
+          isGoodForRiding: true, 
+          warnings: [] 
+        }
+      })
     }
   }
 
