@@ -61,7 +61,8 @@ const ChatWidget = () => {
     setLoading(true)
 
     try {
-      const apiBase = window.location.origin
+      // Use environment variable for production backend URL or fallback to current origin for local dev
+      const apiBase = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || window.location.origin
       const response = await fetch(`${apiBase}/api/ai/gpt-public`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
