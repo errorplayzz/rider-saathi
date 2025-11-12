@@ -9,6 +9,11 @@ const getWeatherApiKey = () => {
   return process.env.OPENWEATHER_API_KEY || process.env.WEATHER_API_KEY
 }
 
+// Helper function to get WeatherAPI.com key
+const getWeatherAPIKey = () => {
+  return process.env.WEATHERAPI_KEY
+}
+
 // @route   GET /api/weather/current
 // @desc    Get current weather for location
 // @access  Private
@@ -24,7 +29,70 @@ router.get('/current', async (req, res) => {
     }
 
     const apiKey = getWeatherApiKey()
+    const weatherAPIKey = getWeatherAPIKey()
+    console.log('🔑 API Keys:', { 
+      openweather: apiKey ? 'Found' : 'Missing',
+      weatherapi: weatherAPIKey ? 'Found' : 'Missing'
+    })
+    
+    // Try WeatherAPI.com first (most accurate)
+    if (weatherAPIKey) {
+      try {
+        console.log('🌐 Making WeatherAPI.com call (most accurate)...')
+        const weatherAPIUrl = `https://api.weatherapi.com/v1/current.json?key=${weatherAPIKey}&q=${latitude},${longitude}&aqi=no`
+        
+        const response = await axios.get(weatherAPIUrl)
+        const data = response.data
+        console.log(`📦 WeatherAPI response: ${data.current.temp_c}°C for ${data.location.name}, ${data.location.country}`)
+        console.log(`📍 Coordinates: ${latitude}, ${longitude}`)
+        console.log(`🕐 Current time: ${new Date().toLocaleString()}`)
+        console.log(`🌅 Is Day: ${data.current.is_day}`)
+
+        const weatherData = {
+          location: {
+            name: data.location.name,
+            country: data.location.country,
+            coordinates: {
+              latitude: data.location.lat,
+              longitude: data.location.lon
+            }
+          },
+          current: {
+            temperature: Math.round(data.current.temp_c),
+            feelsLike: Math.round(data.current.feelslike_c),
+            humidity: data.current.humidity,
+            pressure: data.current.pressure_mb,
+            visibility: data.current.vis_km,
+            windSpeed: data.current.wind_kph / 3.6, // Convert to m/s
+            windDirection: data.current.wind_degree,
+            description: data.current.condition.text.toLowerCase(),
+            main: data.current.condition.text,
+            icon: data.current.is_day ? '01d' : '01n'
+          },
+          rideConditions: {
+            isGoodForRiding: isGoodRidingWeatherAPI(data.current),
+            warnings: getWeatherWarningsAPI(data.current),
+            recommendation: getRidingRecommendationAPI(data.current)
+          },
+          sunrise: new Date().toISOString(), // WeatherAPI doesn't provide sunrise/sunset in current endpoint
+          sunset: new Date().toISOString(),
+          timestamp: new Date().toISOString(),
+          source: 'WeatherAPI.com'
+        }
+
+        console.log('✅ Sending WeatherAPI.com data:', weatherData.current.temperature + '°C')
+        return res.json({
+          success: true,
+          weather: weatherData
+        })
+      } catch (weatherAPIError) {
+        console.log('⚠️ WeatherAPI.com failed:', weatherAPIError.message)
+      }
+    }
+    
+    // Fallback to OpenWeather if WeatherAPI fails
     if (!apiKey) {
+      console.log('❌ No API key, using demo fallback')
       // Demo fallback: return static weather so UI works without external API
       return res.json({
         success: true,
@@ -58,10 +126,14 @@ router.get('/current', async (req, res) => {
       })
     }
 
+    console.log('🌐 Making OpenWeather API call...')
     const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=metric`
     
     const response = await axios.get(weatherUrl)
     const data = response.data
+    console.log(`📦 OpenWeather response: ${data.main.temp}°C for ${data.name}, ${data.sys.country}`)
+    console.log(`📍 Coordinates: ${latitude}, ${longitude}`)
+    console.log(`🕐 Current time: ${new Date().toLocaleString()}`)
 
     const weatherData = {
       location: {
@@ -94,6 +166,7 @@ router.get('/current', async (req, res) => {
       timestamp: new Date().toISOString()
     }
 
+    console.log('✅ Sending real weather data:', weatherData.current.temperature + '°C')
     res.json({
       success: true,
       weather: weatherData
@@ -574,6 +647,99 @@ function calculateOverallRouteConditions(routeWeather) {
     warnings: uniqueWarnings,
     goodConditionsRatio: Math.round(goodRatio * 100)
   }
+}
+
+// WeatherAPI.com helper functions
+function isGoodRidingWeatherAPI(currentWeather) {
+  const condition = currentWeather.condition.text.toLowerCase()
+  const windSpeed = currentWeather.wind_kph / 3.6 // Convert to m/s
+  const visibility = currentWeather.vis_km
+  const temp = currentWeather.temp_c
+
+  // Bad conditions
+  if (condition.includes('rain') || condition.includes('storm') || condition.includes('snow') || condition.includes('drizzle')) {
+    return false
+  }
+  
+  if (windSpeed > 15) { // Strong wind
+    return false
+  }
+  
+  if (visibility < 1) { // Poor visibility
+    return false
+  }
+  
+  if (temp < 0 || temp > 40) { // Extreme temperatures
+    return false
+  }
+
+  return true
+}
+
+function getWeatherWarningsAPI(currentWeather) {
+  const warnings = []
+  const condition = currentWeather.condition.text.toLowerCase()
+  const windSpeed = currentWeather.wind_kph / 3.6
+  const visibility = currentWeather.vis_km
+  const temp = currentWeather.temp_c
+
+  if (condition.includes('rain') || condition.includes('drizzle')) {
+    warnings.push('Wet roads - reduce speed and increase following distance')
+  }
+  
+  if (condition.includes('storm')) {
+    warnings.push('Thunderstorm - seek shelter immediately')
+  }
+  
+  if (condition.includes('snow')) {
+    warnings.push('Icy conditions - extremely dangerous for riding')
+  }
+  
+  if (windSpeed > 10) {
+    warnings.push('Strong winds - expect crosswind gusts')
+  }
+  
+  if (visibility < 2) {
+    warnings.push('Poor visibility - use headlights and reflective gear')
+  }
+  
+  if (temp < 5) {
+    warnings.push('Cold weather - wear appropriate protective gear')
+  }
+  
+  if (temp > 35) {
+    warnings.push('Hot weather - stay hydrated and take breaks')
+  }
+
+  if (!currentWeather.is_day) {
+    warnings.push('Night time - use proper lighting and increased caution')
+  }
+
+  return warnings
+}
+
+function getRidingRecommendationAPI(currentWeather) {
+  if (!isGoodRidingWeatherAPI(currentWeather)) {
+    return 'Not recommended - consider alternative transportation'
+  }
+  
+  const condition = currentWeather.condition.text.toLowerCase()
+  const windSpeed = currentWeather.wind_kph / 3.6
+  const temp = currentWeather.temp_c
+
+  if (!currentWeather.is_day) {
+    return 'Night riding - use proper lighting and extra caution'
+  }
+
+  if (condition.includes('clear') && windSpeed < 5) {
+    return 'Perfect riding weather'
+  }
+  
+  if (condition.includes('cloud') && windSpeed < 10 && temp > 15 && temp < 30) {
+    return 'Excellent riding conditions'
+  }
+  
+  return 'Good for riding with normal precautions'
 }
 
 export default router

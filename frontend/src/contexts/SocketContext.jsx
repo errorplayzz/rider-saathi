@@ -24,6 +24,7 @@ export const SocketProvider = ({ children }) => {
   const [onlineUsers, setOnlineUsers] = useState([])
   const [activeChannels, setActiveChannels] = useState(new Map())
   const { user, profile } = useAuth()
+  const listenersRef = React.useRef({})
 
   // Presence channel for online/offline tracking
   useEffect(() => {
@@ -73,9 +74,34 @@ export const SocketProvider = ({ children }) => {
         }
       })
 
+    // Subscribe to broadcast channels for location and ride events
+    const locChannel = supabase.channel('location-updates')
+    locChannel.on('broadcast', { event: 'location-update' }, (payload) => {
+      // Dispatch as window event so components can listen via socket.on compatibility
+      window.dispatchEvent(new CustomEvent('location-update', { detail: payload }))
+    }).subscribe()
+
+    const rideChannel = supabase.channel('ride-events')
+    rideChannel.on('broadcast', { event: 'ride-start' }, (payload) => {
+      window.dispatchEvent(new CustomEvent('ride-start', { detail: payload }))
+    }).on('broadcast', { event: 'ride-end' }, (payload) => {
+      window.dispatchEvent(new CustomEvent('ride-end', { detail: payload }))
+    }).on('broadcast', { event: 'share-change' }, (payload) => {
+      window.dispatchEvent(new CustomEvent('share-change', { detail: payload }))
+    }).subscribe()
+
+    const batteryChannel = supabase.channel('battery-alerts')
+    batteryChannel.on('broadcast', { event: 'battery-alert' }, (payload) => {
+      window.dispatchEvent(new CustomEvent('battery-alert', { detail: payload }))
+    }).subscribe()
+
+    // Keep reference to channels so they can be cleaned up on unmount
+    const cleanupChannels = [presenceChannel, locChannel, rideChannel, batteryChannel]
+
     // Cleanup on unmount
     return () => {
-      presenceChannel.unsubscribe()
+      // Unsubscribe all channels we created
+      cleanupChannels.forEach(ch => ch.unsubscribe && ch.unsubscribe())
       if (user) {
         updateUserStatus(user.id, false).catch(console.error)
       }
@@ -188,6 +214,36 @@ export const SocketProvider = ({ children }) => {
       .subscribe()
 
     return () => channel.unsubscribe()
+  }, [])
+
+  // Provide a small socket-like API backed by window events so components can call socket.on/off
+  const socket = React.useMemo(() => {
+    return {
+      on: (event, cb) => {
+        if (!event || typeof cb !== 'function') return
+        const handler = (e) => cb(e.detail)
+        // store handler so it can be removed later
+        listenersRef.current[event] = listenersRef.current[event] || new Set()
+        listenersRef.current[event].add(handler)
+        window.addEventListener(event, handler)
+      },
+      off: (event) => {
+        const set = listenersRef.current[event]
+        if (!set) return
+        for (const handler of set) {
+          window.removeEventListener(event, handler)
+        }
+        delete listenersRef.current[event]
+      },
+      sendRideEvent: async (type, payload) => {
+        try {
+          const channel = supabase.channel('ride-events')
+          await channel.send({ type: 'broadcast', event: type, payload })
+        } catch (e) {
+          console.error('Failed to send ride event:', e)
+        }
+      }
+    }
   }, [])
 
   // Send emergency alert
@@ -308,7 +364,7 @@ export const SocketProvider = ({ children }) => {
     sendBatteryAlert,
     sendHelperAlert,
     // Legacy compatibility - these are now handled differently
-    socket: null // No direct socket object in Supabase Realtime
+    socket
   }
 
   return (

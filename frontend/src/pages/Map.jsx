@@ -11,7 +11,7 @@ import {
   respondToEmergency
 } from '../lib/supabaseHelpers'
 
-// Fix for default markers in React Leaflet
+// Fix default marker icon URLs used by React Leaflet
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -19,7 +19,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 })
 
-// Custom icons
+// Custom colored marker icons for different map points
 const userIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
@@ -47,7 +47,7 @@ const fuelIcon = new L.Icon({
   shadowSize: [41, 41]
 })
 
-// Map event handler component
+// Component to forward map events (click, locationfound) to the parent
 const MapEventHandler = ({ onLocationUpdate, onMapClick }) => {
   const map = useMapEvents({
     click: (e) => {
@@ -76,32 +76,34 @@ const Map = () => {
   const [routeData, setRouteData] = useState(null)
   const [destination, setDestination] = useState(null)
   const [showControls, setShowControls] = useState(true)
+  const [otherRiders, setOtherRiders] = useState({})
   
   const { socket, updateLocation } = useSocket()
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const mapRef = useRef()
   const watchIdRef = useRef(null)
   const lastSentRef = useRef(0)
   const lastPosRef = useRef(null)
 
-  // Get user's current location and watch for changes (higher accuracy + smoothing)
-  useEffect(() => {
-    // Helper: haversine distance in meters
-    const haversineDistance = (a, b) => {
-      if (!a || !b) return Infinity
-      const toRad = (v) => (v * Math.PI) / 180
-      const R = 6371000 // meters
-      const dLat = toRad(b.lat - a.lat)
-      const dLon = toRad(b.lng - a.lng)
-      const lat1 = toRad(a.lat)
-      const lat2 = toRad(b.lat)
+  // Helper: compute haversine distance in meters between two coordinates
+  const haversineDistance = (a, b) => {
+    if (!a || !b) return Infinity
+    const toRad = (v) => (v * Math.PI) / 180
+    const R = 6371000 // meters
+    const dLat = toRad(b.lat - a.lat)
+    const dLon = toRad(b.lng - a.lng)
+    const lat1 = toRad(a.lat)
+    const lat2 = toRad(b.lat)
 
-      const sinDLat = Math.sin(dLat / 2)
-      const sinDLon = Math.sin(dLon / 2)
-      const aHarv = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon
-      const c = 2 * Math.atan2(Math.sqrt(aHarv), Math.sqrt(1 - aHarv))
-      return R * c
-    }
+    const sinDLat = Math.sin(dLat / 2)
+    const sinDLon = Math.sin(dLon / 2)
+    const aHarv = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon
+    const c = 2 * Math.atan2(Math.sqrt(aHarv), Math.sqrt(1 - aHarv))
+    return R * c
+  }
+
+  // Get the user's current location and watch for updates; apply smoothing for a stable position
+  useEffect(() => {
 
     if (!navigator.geolocation) return
 
@@ -127,7 +129,7 @@ const Map = () => {
 
       setAccuracy(raw.accuracy)
 
-      // Throttle updates to backend: send if moved > 10m or every 5s
+  // Throttle updates to backend: send when moved more than 10m or at least every 5s
       const now = Date.now()
       const lastPos = lastPosRef.current
       const moved = lastPos ? haversineDistance(lastPos, raw) : Infinity
@@ -164,31 +166,92 @@ const Map = () => {
         navigator.geolocation.clearWatch(watchIdRef.current)
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Intentionally disable the exhaustive-deps rule for this effect to avoid repeated subscriptions
   }, [])
 
-  // Socket event listeners
+  // Socket event listeners for real-time updates
   useEffect(() => {
     if (!socket) return
-
     socket.on('emergency-alert', (alertData) => {
       setEmergencyAlerts(prev => [...prev, alertData])
     })
 
-    socket.on('location-update', (locationData) => {
-      // Update other users' locations if needed
-      console.log('User location update:', locationData)
-    })
+    const handleRideStart = (payload) => {
+      const p = payload
+      const id = p?.ride?.id || p?.user?.id
+      if (!id) return
+      setOtherRiders(prev => ({
+        ...prev,
+        [p.user.id]: {
+          user: p.user,
+          ride: p.ride,
+          location: p.location,
+          shareLocation: p.shareLocation ?? true,
+          lastSeen: Date.now()
+        }
+      }))
+    }
+
+    const handleLocationUpdate = (payload) => {
+      const pd = payload
+      const uid = pd?.userId || pd?.user?.id
+      if (!uid) return
+      setOtherRiders(prev => {
+        if (!prev[uid]) return prev
+        return {
+          ...prev,
+          [uid]: {
+            ...prev[uid],
+            location: pd.location || prev[uid].location,
+            lastSeen: Date.now()
+          }
+        }
+      })
+    }
+
+    const handleRideEnd = (payload) => {
+      const uid = payload?.userId
+      if (!uid) return
+      setOtherRiders(prev => {
+        const copy = { ...prev }
+        delete copy[uid]
+        return copy
+      })
+    }
+
+    const handleShareChange = (payload) => {
+      const uid = payload?.userId
+      if (!uid) return
+      setOtherRiders(prev => {
+        const copy = { ...prev }
+        if (copy[uid]) {
+          if (payload.shareLocation === false) {
+            delete copy[uid]
+          } else {
+            copy[uid].shareLocation = !!payload.shareLocation
+          }
+        }
+        return copy
+      })
+    }
+
+  socket.on('ride-start', handleRideStart)
+    socket.on('location-update', handleLocationUpdate)
+    socket.on('ride-end', handleRideEnd)
+  socket.on('share-change', handleShareChange)
 
     return () => {
       socket.off('emergency-alert')
       socket.off('location-update')
+      socket.off('ride-start')
+      socket.off('ride-end')
+      socket.off('share-change')
     }
   }, [socket])
 
   const fetchWeather = async (lat, lng) => {
     try {
-      // Try backend API first (preferred method)
+  // Prefer fetching weather from the backend first (it may aggregate or cache results)
       const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000'
       const token = (typeof session !== 'undefined' && session?.access_token) ? session.access_token : 'demo-token'
 
@@ -213,10 +276,10 @@ const Map = () => {
       } catch (backendError) {
         console.log('Backend weather API failed, trying direct OpenWeather API...', backendError)
         
-        // Fallback to direct OpenWeather API call
+  // If backend fails, fall back to public weather APIs directly
         const weatherApiKey = import.meta.env.VITE_OPENWEATHER_API_KEY
         
-        // Try OpenMeteo first (more accurate and free)
+  // Try OpenMeteo first — generally accurate and free to use
         try {
           const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=auto`
           console.log(`🌐 Trying OpenMeteo API (most accurate free API)...`)
@@ -260,7 +323,7 @@ const Map = () => {
           console.log('⚠️ OpenMeteo failed, trying OpenWeather...', meteoError)
         }
         
-        // Fallback to OpenWeather if OpenMeteo fails
+  // Fall back to OpenWeather if earlier services fail or keys are missing
         if (weatherApiKey && weatherApiKey !== 'demo-api-key-replace-with-real-key') {
           try {
             const directUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${weatherApiKey}&units=metric`
@@ -305,8 +368,8 @@ const Map = () => {
           }
         }
         
-        // Final fallback
-        setWeather({
+  // Final fallback: use a safe default weather object
+  setWeather({
           current: { 
             temperature: 22, 
             description: 'clear sky',
@@ -326,8 +389,8 @@ const Map = () => {
       }
     } catch (error) {
       console.error('Weather fetch error:', error)
-      // Set fallback weather data
-      setWeather({
+  // Set conservative fallback weather data
+  setWeather({
         current: { 
           temperature: 22, 
           description: 'clear sky' 
@@ -343,8 +406,8 @@ const Map = () => {
   const fetchNearbyPOIs = async (lat, lng, type) => {
     setIsLoading(true)
     try {
-      // POI data can be integrated with mapping services (Google Places, etc.)
-      console.log('POI feature - add mapping service integration')
+  // POI data should be fetched from a places provider (Google Places, Overpass, etc.)
+  console.log('POI placeholder - integrate a places provider here')
       setNearbyPOIs([])
     } catch (error) {
       console.error('POI fetch error:', error)
@@ -364,8 +427,8 @@ const Map = () => {
 
   const calculateRoute = async (start, end) => {
     try {
-      // Route calculation can be integrated with mapping services (Google Maps, etc.)
-      console.log('Route calculation - add mapping service integration')
+  // Route calculation placeholder — integrate with a routing service (OSRM, Mapbox, Google)
+  console.log('Route calculation placeholder - integrate routing service here')
       setRouteData(null)
     } catch (error) {
       console.error('Route calculation error:', error)
@@ -557,6 +620,58 @@ const Map = () => {
             </Popup>
           </Marker>
         ))}
+
+        {/* Other riders markers (active rides) */}
+        {/** We'll render markers for otherRiders stored via ride-start events **/}
+        {/** Build array from local window-dispatched state: read from window.__otherRiders if present **/}
+        {Object.values(otherRiders).map((r) => {
+          if (!r || !r.location || !r.shareLocation) return null
+          const lat = r.location.lat || r.location.latitude
+          const lng = r.location.lng || r.location.longitude
+          if (!lat || !lng) return null
+          const dist = haversineDistance({ lat: userLocation.lat, lng: userLocation.lng }, { lat, lng })
+          return (
+            <Marker key={`rider-${r.user.id}`} position={[lat, lng]} icon={userIcon}>
+              <Popup>
+                <div className="text-center max-w-xs">
+                  {dist <= 1000 ? (
+                    <>
+                      <h3 className="font-bold text-neon-cyan">{r.user.name}</h3>
+                      <p className="text-sm text-gray-600">{r.user.bike || 'Bike'}</p>
+                      <p className="text-xs text-gray-500">{Math.round(dist)} m away</p>
+                      <div className="mt-2 text-xs text-gray-700">
+                        <p>Nearby — within 1 km</p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="font-bold text-neon-cyan">Rider nearby</h3>
+                      <p className="text-xs text-gray-500">{Math.round(dist)} m away</p>
+                    </>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          )
+        })}
+
+        {/* If current user has turned off location sharing, show a small corner summary visible only to them */}
+        {profile?.preferences && profile.preferences.shareLocation === false && (
+          <div className="absolute top-24 right-4 z-[1002]">
+            <div className="glass-morphism p-3 rounded-lg text-sm max-w-xs">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-full bg-dark-700 flex items-center justify-center text-white">
+                  {(profile?.name || user?.user_metadata?.name || 'U').charAt(0).toUpperCase()
+                }</div>
+                <div>
+                  <div className="font-semibold text-white">You (hidden)</div>
+                  <div className="text-xs text-gray-400">{profile?.bike_model || 'Bike'}</div>
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 mt-2">Location sharing is OFF — only you can see your marker.</p>
+            </div>
+          </div>
+        )}
       </MapContainer>
 
       {/* Toggle Button */}

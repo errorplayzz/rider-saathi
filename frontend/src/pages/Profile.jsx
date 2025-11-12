@@ -20,6 +20,7 @@ import {
   TrashIcon
 } from '@heroicons/react/24/outline'
 import { useAuth } from '../contexts/AuthContext'
+import { useSocket } from '../contexts/SocketContext'
 import { 
   uploadAvatar,
   getUserAchievements,
@@ -65,6 +66,7 @@ const Profile = () => {
   const [twoFAEnabled, setTwoFAEnabled] = useState(false)
   
   const { user, profile, logout, refreshProfile } = useAuth()
+  const { socket } = useSocket()
 
   const navigate = useNavigate()
 
@@ -86,8 +88,8 @@ const Profile = () => {
 
   const fetchUserProfile = async () => {
     try {
-      // Use profile from AuthContext instead of fetching
-      if (!profile) return
+  // Use the profile already available from AuthContext; avoid extra fetch
+  if (!profile) return
       
       const prefs = profile.preferences || {}
       setSettings({
@@ -119,8 +121,8 @@ const Profile = () => {
 
   const fetchUserStats = async () => {
     try {
-      // Use profile stats from AuthContext
-      if (!profile) return
+  // Populate user statistics from the AuthContext profile
+  if (!profile) return
       
       setUserStats({
         totalRides: profile.total_rides || 0,
@@ -154,7 +156,7 @@ const Profile = () => {
 
   const fetchEmergencyContacts = async () => {
     try {
-      // Emergency contacts can be stored in profile preferences
+      // Emergency contacts may be stored in profile preferences
       const contacts = profile?.preferences?.emergencyContacts || []
       setEmergencyContacts(contacts)
     } catch (error) {
@@ -172,15 +174,15 @@ const Profile = () => {
         bike_year: profileForm.bikeYear,
         bike_color: profileForm.bikeColor
       })
-      setIsEditing(false)
-      // Refresh profile immediately from AuthContext
-      await refreshProfile()
+  setIsEditing(false)
+  // Refresh profile information from AuthContext so UI shows the latest data
+  await refreshProfile()
       alert('Profile updated successfully!')
     } catch (error) {
       console.error('Profile update error:', error)
       const msg = error?.message || JSON.stringify(error)
       if (msg && msg.toLowerCase().includes('row-level security')) {
-        alert(msg + '\n\nIt looks like your database row-level security (RLS) policy is preventing profile updates. Apply a policy that allows authenticated users to update their own profile (e.g. `auth.uid() = id`).')
+        alert(msg + '\n\nIt looks like your database row-level security (RLS) policy is preventing profile updates. Apply a policy that allows authenticated users to update their own profile (for example: `auth.uid() = id`).')
       } else {
         alert(msg || 'Failed to update profile')
       }
@@ -225,8 +227,8 @@ const Profile = () => {
     }
 
     try {
-      // Supabase password change - would need to use supabase.auth.updateUser
-      // For now, show a message about using email reset
+  // To change a user's password with Supabase, call supabase.auth.updateUser.
+  // For now, guide the user to use the Forgot Password flow via email.
       alert('Please use the Forgot Password feature on the login page to change your password')
       setShowChangePassword(false)
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
@@ -240,7 +242,7 @@ const Profile = () => {
     try {
       const updatedSettings = { ...settings, [settingKey]: value }
       
-      // Update preferences in profile
+  // Persist updated preferences back to the user's profile
       const preferences = profile?.preferences || {}
       const updatedPreferences = { ...preferences }
       
@@ -253,6 +255,14 @@ const Profile = () => {
       
       await updateProfileHelper(user.id, { preferences: updatedPreferences })
       setSettings(updatedSettings)
+      // Broadcast shareLocation changes so map clients can update visibility
+      try {
+        if (settingKey === 'locationSharing') {
+          socket?.sendRideEvent && socket.sendRideEvent('share-change', { userId: user.id, shareLocation: value })
+        }
+      } catch (e) {
+        console.warn('Failed to broadcast share-change:', e)
+      }
     } catch (error) {
       console.error('Settings update error:', error)
     }
@@ -265,8 +275,8 @@ const Profile = () => {
     
     if (confirmed) {
       try {
-        // This would require admin access in Supabase - typically done through admin API
-        // For now, show a message to contact support
+  // Account deletion usually requires admin privileges (service role).
+  // For safety, ask the user to contact support rather than deleting here.
         alert('Please contact support to delete your account')
         // await supabase.auth.admin.deleteUser(user.id) // Requires service role key
       } catch (error) {

@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vitejs.dev/config/
+// See Vite configuration docs: https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -10,13 +10,13 @@ export default defineConfig({
     watch: {
       usePolling: true
     },
-    // Proxy API requests to backend during development to avoid CORS and 404 from Vite
+  // Proxy API requests to the backend during development to avoid CORS issues and 404s from Vite
     proxy: {
       '/api': {
         target: 'http://localhost:5000',
         changeOrigin: true,
         secure: false,
-        // keep /api prefix so backend routes like /api/ai/gpt still match
+  // preserve the /api prefix so backend routes (for example /api/ai/gpt) continue to match
         rewrite: (path) => path.replace(/^\/api/, '/api')
       }
     }

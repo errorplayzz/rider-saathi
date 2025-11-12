@@ -16,7 +16,10 @@ import { useSocket } from '../contexts/SocketContext'
 import { 
   getLeaderboard, 
   getActiveEmergencyAlerts,
-  createRide
+  createRide,
+  updateRide,
+  updateUserStatus,
+  updateProfile
 } from '../lib/supabaseHelpers'
 
 const Dashboard = () => {
@@ -24,14 +27,31 @@ const Dashboard = () => {
   const [weather, setWeather] = useState(null)
   const [nearbyAlerts, setNearbyAlerts] = useState([])
   const [leaderboard, setLeaderboard] = useState([])
-  const [batteryLevel, setBatteryLevel] = useState(null) // Start with null to show loading
+  const [batteryLevel, setBatteryLevel] = useState(null) // initialize as null so we can show a loading state while the battery is checked
   const [isCharging, setIsCharging] = useState(false)
   const [batterySupported, setBatterySupported] = useState(true)
   const [isRiding, setIsRiding] = useState(false)
   const [currentLocation, setCurrentLocation] = useState(null)
+  const [currentRide, setCurrentRide] = useState(null) // store current ride record (or id)
   
   const { user, profile, session } = useAuth()
   const { socket, connected, onlineUsers } = useSocket()
+
+  // Debug logging to help diagnose why the dashboard might be blank in some environments
+  useEffect(() => {
+    try {
+      if (import.meta.env?.DEV) {
+        console.log('DBG Dashboard state:', {
+          currentLocation,
+          nearbyAlertsCount: nearbyAlerts?.length,
+          weatherLoaded: !!weather,
+          statsLoaded: !!stats
+        })
+      }
+    } catch (e) {
+      // ignore in non-Vite environments
+    }
+  }, [currentLocation, nearbyAlerts, weather, stats])
 
   useEffect(() => {
     fetchUserStats()
@@ -40,7 +60,7 @@ const Dashboard = () => {
     fetchLeaderboard()
     getCurrentLocation()
     
-    // Integrate with the Battery Status API if available
+  // Use the Battery Status API when supported to read device battery level and charging state
     let batteryMgr = null
     const initBattery = async () => {
       try {
@@ -60,10 +80,10 @@ const Dashboard = () => {
           
           battery.addEventListener('levelchange', updateBattery)
           battery.addEventListener('chargingchange', updateBattery)
-        } else {
+          } else {
           console.warn('Battery API not supported in this browser')
           setBatterySupported(false)
-          // Fallback: Show device battery if available, otherwise hide
+          // If Battery API isn't available, clear battery info so the UI hides the battery card
           setBatteryLevel(null)
         }
       } catch (err) {
@@ -82,7 +102,7 @@ const Dashboard = () => {
           batteryMgr.removeEventListener('chargingchange', () => {})
         }
       } catch (e) {
-        // ignore
+        // no-op: ignore errors while removing event listeners
       }
     }
   }, [])
@@ -96,7 +116,7 @@ const Dashboard = () => {
 
     socket.on('battery-alert', (data) => {
       if (data.batteryLevel < 20) {
-        // Show low battery notification
+        // Handle low battery: notify user and log for debugging
         console.log('Low battery alert received:', data)
       }
     })
@@ -122,9 +142,24 @@ const Dashboard = () => {
     }
   }
 
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    // Haversine formula - returns distance in meters
+    const R = 6371e3 // Earth's radius in meters
+    const φ1 = lat1 * Math.PI / 180
+    const φ2 = lat2 * Math.PI / 180
+    const Δφ = (lat2 - lat1) * Math.PI / 180
+    const Δλ = (lon2 - lon1) * Math.PI / 180
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return R * c
+  }
+
   const fetchUserStats = async () => {
     try {
-      // Get stats from profile (already loaded in AuthContext)
+  // Build stats object from the profile provided by AuthContext
       if (profile) {
         const statsData = {
           totalRides: profile.total_rides || 0,
@@ -155,11 +190,11 @@ const Dashboard = () => {
           console.log(`📍 Location: ${lat}, ${lon}`)
           console.log(`🎯 Location accuracy: ${position.coords.accuracy} meters`)
 
-          // Try backend API first (preferred method)
+          // Prefer fetching weather from our backend API (it may aggregate, cache, or add context)
           const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000'
           console.log(`🔗 Backend URL: ${API_BASE}`)
 
-          // Get a token from Auth context (Supabase session) if available
+          // Use the session token from AuthContext for authenticated backend requests if available
           const token = (typeof session !== 'undefined' && session?.access_token) ? session.access_token : 'demo-token'
 
           const url = `${API_BASE.replace(/\/$/, '')}/api/weather/current?latitude=${lat}&longitude=${lon}`
@@ -179,7 +214,7 @@ const Dashboard = () => {
               const body = await res.json()
               console.log('📦 Backend response:', body)
               
-              // backend returns { success: true, weather: { ... } }
+              // Expecting backend response in the shape: { success: true, weather: { ... } }
               if (body && body.success && body.weather) {
                 console.log('✅ Using backend weather data')
                 setWeather(body.weather)
@@ -190,11 +225,11 @@ const Dashboard = () => {
           } catch (backendError) {
             console.log('⚠️ Backend weather API failed, trying direct OpenWeather API...', backendError)
             
-            // Fallback to direct OpenWeather API call
+            // If backend fails, fall back to calling public weather APIs directly
             const weatherApiKey = import.meta.env.VITE_OPENWEATHER_API_KEY
             console.log(`🔑 Weather API Key: ${weatherApiKey ? 'Found' : 'Missing'}`)
             
-            // Try OpenMeteo first (more accurate and free)
+            // Try OpenMeteo first — usually accurate and free to use
             try {
               const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=auto`
               console.log(`🌐 Trying OpenMeteo API (most accurate free API)...`)
@@ -212,9 +247,9 @@ const Dashboard = () => {
                   },
                   current: {
                     temperature: Math.round(meteoData.current_weather.temperature),
-                    feelsLike: Math.round(meteoData.current_weather.temperature - 2), // Approximate feels like
+                    feelsLike: Math.round(meteoData.current_weather.temperature - 2), // approximate 'feels like' temperature
                     humidity: meteoData.hourly.relative_humidity_2m[0] || 50,
-                    pressure: 1013, // Default
+                    pressure: 1013, // default pressure value
                     visibility: 10,
                     windSpeed: meteoData.current_weather.windspeed,
                     windDirection: meteoData.current_weather.winddirection,
@@ -243,7 +278,7 @@ const Dashboard = () => {
               console.log('⚠️ OpenMeteo failed, trying WeatherAPI...', meteoError)
             }
             
-            // Try WeatherAPI.com (most accurate with API key)
+            // If provided, try WeatherAPI.com using the API key (often high accuracy)
             const weatherAPIKey = import.meta.env.VITE_WEATHERAPI_KEY
             if (weatherAPIKey && weatherAPIKey !== 'your-weatherapi-key-here') {
               try {
@@ -267,7 +302,7 @@ const Dashboard = () => {
                       humidity: weatherAPIData.current.humidity,
                       pressure: weatherAPIData.current.pressure_mb,
                       visibility: weatherAPIData.current.vis_km,
-                      windSpeed: weatherAPIData.current.wind_kph / 3.6, // Convert to m/s
+                      windSpeed: weatherAPIData.current.wind_kph / 3.6, // convert from km/h to m/s
                       windDirection: weatherAPIData.current.wind_degree,
                       description: weatherAPIData.current.condition.text.toLowerCase(),
                       main: weatherAPIData.current.condition.text,
@@ -296,7 +331,7 @@ const Dashboard = () => {
               }
             }
             
-            // Fallback to OpenWeather if OpenMeteo fails
+            // Fall back to OpenWeather if earlier services fail
             if (weatherApiKey && weatherApiKey !== 'demo-api-key-replace-with-real-key') {
               try {
                 const directUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${weatherApiKey}&units=metric`
@@ -309,7 +344,7 @@ const Dashboard = () => {
                   const directData = await directRes.json()
                   console.log('📦 Direct API response:', directData)
                   
-                  // Transform the data to match our expected format
+                  // Normalize the OpenWeather response into our expected weather format
                   const weatherData = {
                     location: {
                       name: directData.name,
@@ -576,11 +611,86 @@ const Dashboard = () => {
         address: 'Starting location'
       })
       
+      // store ride locally so we can end it later
+      setCurrentRide(ride)
       setIsRiding(true)
+
+      // emit ride-start event so other clients can show this rider on map (if they share location)
+      try {
+        const share = profile?.preferences?.shareLocation ?? true
+        socket?.sendRideEvent && socket.sendRideEvent('ride-start', {
+          ride,
+          user: { id: user.id, name: profile?.name, bike: profile?.bike_model },
+          location: currentLocation,
+          shareLocation: share
+        })
+      } catch (e) {
+        console.warn('Failed to emit ride-start event', e)
+      }
+
+      // update profile is_riding flag
+      try { await updateUserStatus(user.id, true, true) } catch (e) { /* non-fatal */ }
+
+      // Increment user's total rides in profile (best-effort) so "Your Stats" updates
+      try {
+        const newTotal = (profile?.total_rides || 0) + 1
+        await updateProfile(user.id, { total_rides: newTotal })
+        // update local stats state for immediate feedback
+        setStats(prev => ({ ...(prev || {}), totalRides: newTotal }))
+      } catch (e) {
+        console.warn('Failed to update profile ride count:', e)
+      }
+
       alert('Ride started! Stay safe!')
     } catch (error) {
       console.error('Start ride error:', error)
       alert('Failed to start ride')
+    }
+  }
+
+  const endRide = async () => {
+    if (!currentRide) {
+      alert('No active ride to end')
+      setIsRiding(false)
+      return
+    }
+
+    if (!currentLocation) {
+      // still attempt to end ride without final location
+      const confirmEnd = window.confirm('Location not available. End ride anyway?')
+      if (!confirmEnd) return
+    }
+
+    try {
+      const updates = {
+        end_time: new Date().toISOString()
+      }
+
+      if (currentLocation) {
+        updates.end_location = `POINT(${currentLocation.longitude} ${currentLocation.latitude})`
+        updates.end_address = 'Ending location'
+      }
+
+      await updateRide(currentRide.id || currentRide, updates)
+
+      // emit ride-end so other clients remove marker
+      try {
+        socket?.sendRideEvent && socket.sendRideEvent('ride-end', { rideId: currentRide.id || currentRide, userId: user.id })
+      } catch (e) {
+        console.warn('Failed to emit ride-end event', e)
+      }
+
+      // clear local ride state
+      setCurrentRide(null)
+      setIsRiding(false)
+
+      // update profile is_riding flag
+      try { await updateUserStatus(user.id, true, false) } catch (e) { /* non-fatal */ }
+
+      alert('Ride ended — good job!')
+    } catch (error) {
+      console.error('End ride error:', error)
+      alert('Failed to end ride')
     }
   }
 
@@ -750,7 +860,7 @@ const Dashboard = () => {
               {isRiding ? 'Riding' : 'Parked'}
             </p>
             <button
-              onClick={startRide}
+              onClick={isRiding ? endRide : startRide}
               className={`text-xs mt-2 px-3 py-1 rounded transition-colors ${
                 isRiding 
                   ? 'bg-red-600 hover:bg-red-700 text-white' 
@@ -894,9 +1004,25 @@ const Dashboard = () => {
                         <h3 className="text-white font-semibold capitalize">
                           {alert.type} Alert
                         </h3>
-                        <p className="text-sm text-gray-400">
-                          {Math.round(alert.distance)}m away • {alert.respondersCount || 0} responses
-                        </p>
+                        {(() => {
+                          let d = typeof alert.distance === 'number' ? alert.distance : null
+
+                          if (d === null && alert.location && Array.isArray(alert.location.coordinates) && alert.location.coordinates.length === 2 && currentLocation) {
+                            // server may store [longitude, latitude]
+                            d = calculateDistance(
+                              currentLocation.latitude,
+                              currentLocation.longitude,
+                              alert.location.coordinates[1],
+                              alert.location.coordinates[0]
+                            )
+                          }
+
+                          const distanceText = Number.isFinite(d)
+                            ? `${Math.round(d)}m away • ${alert.respondersCount || 0} responses`
+                            : `${alert.respondersCount || 0} responses`
+
+                          return <p className="text-sm text-gray-400">{distanceText}</p>
+                        })()}
                         {alert.description && (
                           <p className="text-sm text-gray-300 mt-1">
                             {alert.description}

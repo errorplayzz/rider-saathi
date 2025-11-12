@@ -33,19 +33,19 @@ const Register = () => {
   const { register } = useAuth()
   const navigate = useNavigate()
 
-  const DEFAULT_OTP = '654321' // Default OTP for testing
+  const DEFAULT_OTP = '654321' // default OTP for testing only (do not use in production)
 
   const handleSendOtp = () => {
-    // Validate phone number
+  // Basic phone number validation
     if (!formData.phone || formData.phone.length < 10) {
       setError('Please enter a valid phone number')
       return
     }
 
-    // Show OTP verification modal
+  // Show the OTP verification modal to enter the code
     setShowOtpVerification(true)
     setError('')
-    // In production, you would send OTP via SMS API
+  // In production, send the OTP using an SMS provider or verification service
     console.log('OTP sent to:', formData.phone, 'OTP:', DEFAULT_OTP)
     alert(`OTP sent to ${formData.phone}. For testing, use: ${DEFAULT_OTP}`)
   }
@@ -66,13 +66,13 @@ const Register = () => {
     e.preventDefault()
     setError('')
 
-    // Check if OTP is verified
+  // Ensure the phone OTP has been verified before allowing registration
     if (!isOtpVerified) {
       setError('Please verify your phone number with OTP first')
       return
     }
 
-    // Validation
+  // Validate password and other form fields
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match')
       return
@@ -93,7 +93,7 @@ const Register = () => {
     })
     
     if (result.success) {
-      // Show email verification message instead of navigating
+  // Show an email verification message instead of navigating immediately
       setRegisteredEmail(formData.email)
       setShowEmailVerification(true)
     } else {
