@@ -74,6 +74,37 @@ export const SocketProvider = ({ children }) => {
         }
       })
 
+    // If the tab is backgrounded, browsers may throttle or drop the
+    // realtime connection. When the document becomes visible again or
+    // when the browser regains network connectivity, attempt to
+    // re-track presence or resubscribe so the UI shows online state
+    // without a full page refresh.
+    const handleVisibilityRestore = async () => {
+      try {
+        if (!presenceChannel) return
+        if (!document.hidden) {
+          await presenceChannel.track({
+            user_id: user.id,
+            email: user.email,
+            name: profile.name,
+            online_at: new Date().toISOString()
+          })
+          setConnected(true)
+          console.log('ℹ️ Presence re-tracked after visibility/online')
+        }
+      } catch (err) {
+        console.warn('Could not re-track presence, attempting to resubscribe', err)
+        try {
+          await presenceChannel.subscribe()
+        } catch (e) {
+          console.error('Resubscribe failed', e)
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityRestore)
+    window.addEventListener('online', handleVisibilityRestore)
+
     // Subscribe to broadcast channels for location and ride events
     const locChannel = supabase.channel('location-updates')
     locChannel.on('broadcast', { event: 'location-update' }, (payload) => {

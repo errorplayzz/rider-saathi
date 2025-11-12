@@ -24,15 +24,17 @@ export default function Footer() {
             </div>
             <p className="mt-4 text-sm text-gray-400 max-w-sm">Rider Saathi combines GPS tracking, emergency alerts, AI navigation and real-time communication — designed for riders who value safety and control.</p>
             <div className="flex gap-3 mt-4">
-              {/* Social icons - simple inline SVGs with hover */}
-              <a href="#" aria-label="Twitter" className="p-2 rounded-md bg-gradient-to-tr from-neon-cyan/10 to-transparent hover:scale-105 transition-transform">
-                <svg className="w-5 h-5 text-neon-cyan" viewBox="0 0 24 24" fill="currentColor"><path d="M22 5.92c-.7.31-1.45.52-2.24.62a3.86 3.86 0 0 0 1.7-2.13 7.72 7.72 0 0 1-2.45.94 3.86 3.86 0 0 0-6.57 3.52A10.95 10.95 0 0 1 3.17 4.5a3.86 3.86 0 0 0 1.19 5.15c-.6-.02-1.17-.18-1.66-.45v.05a3.86 3.86 0 0 0 3.09 3.78c-.34.09-.7.14-1.07.14-.26 0-.51-.02-.75-.07a3.87 3.87 0 0 0 3.61 2.68A7.75 7.75 0 0 1 2 19.54 10.94 10.94 0 0 0 8.29 21c6.08 0 9.41-5.03 9.41-9.4v-.43c.64-.47 1.19-1.06 1.62-1.73-.59.26-1.22.44-1.87.52z"/></svg>
-              </a>
-              <a href="#" aria-label="Instagram" className="p-2 rounded-md bg-gradient-to-tr from-neon-purple/10 to-transparent hover:scale-105 transition-transform">
+              {/* Social icons: keeping Instagram and adding YouTube. Replace the href placeholders with your real links. */}
+              {/* Instagram: replace INSTAGRAM_LINK with your Instagram URL */}
+              <a href="https://instagram.com/YOUR_INSTAGRAM_HANDLE" target="_blank" rel="noopener noreferrer" aria-label="Instagram" className="p-2 rounded-md bg-gradient-to-tr from-neon-purple/10 to-transparent hover:scale-105 transition-transform">
                 <svg className="w-5 h-5 text-neon-purple" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zm5 6.2A3.8 3.8 0 1 0 15.8 12 3.8 3.8 0 0 0 12 8.2zM18.5 6.1a1.1 1.1 0 1 0 1.1 1.1 1.1 1.1 0 0 0-1.1-1.1z"/></svg>
               </a>
-              <a href="#" aria-label="LinkedIn" className="p-2 rounded-md bg-gradient-to-tr from-neon-pink/10 to-transparent hover:scale-105 transition-transform">
-                <svg className="w-5 h-5 text-neon-pink" viewBox="0 0 24 24" fill="currentColor"><path d="M4.98 3.5A2.5 2.5 0 1 1 4.98 8.5 2.5 2.5 0 1 1 4.98 3.5zM3 9h4v12H3zM10 9h3.7v1.6h.1a4 4 0 0 1 3.6-2c3.8 0 4.5 2.5 4.5 5.8V21h-4v-5.2c0-1.2 0-2.8-1.7-2.8s-2 1.3-2 2.7V21h-4z"/></svg>
+
+              {/* YouTube: replace YOUTUBE_LINK with your YouTube channel URL */}
+              <a href="https://youtu.be/jhhElAydbMc" target="_blank" rel="noopener noreferrer" aria-label="YouTube" className="p-2 rounded-md bg-gradient-to-tr from-red-600/10 to-transparent hover:scale-105 transition-transform">
+                <svg className="w-5 h-5 text-red-500" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M23.5 6.2a2.8 2.8 0 0 0-1.96-2C19.86 3.5 12 3.5 12 3.5s-7.86 0-9.54.7A2.8 2.8 0 0 0 .5 6.2 29.3 29.3 0 0 0 0 12a29.3 29.3 0 0 0 .5 5.8 2.8 2.8 0 0 0 1.96 2c1.68.7 9.54.7 9.54.7s7.86 0 9.54-.7a2.8 2.8 0 0 0 1.96-2A29.3 29.3 0 0 0 24 12a29.3 29.3 0 0 0-.5-5.8zM9.75 15.02V8.98L15.5 12l-5.75 3.02z"/>
+                </svg>
               </a>
             </div>
           </div>
@@ -60,7 +62,7 @@ export default function Footer() {
         </div>
 
         <div className="max-w-6xl mx-auto px-6 mt-10">
-          <div className="border-t border-neutral-800 pt-6 text-center text-sm text-gray-500">© {new Date().getFullYear()} Rider Saathi. All rights reserved.</div>
+          <div className="border-t border-neutral-800 pt-6 text-center text-sm text-gray-500">© 2025 Rider Saathi. Developed with ❤️ by Team Pseudocoders.</div>
         </div>
       </div>
     </footer>

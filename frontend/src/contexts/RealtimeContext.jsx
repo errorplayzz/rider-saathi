@@ -82,6 +82,38 @@ export const RealtimeProvider = ({ children }) => {
 
         presenceChannelRef.current = presenceChannel
 
+        // If the tab was backgrounded and then returned, browsers may have
+        // throttled or dropped the realtime connection. Re-track presence
+        // (or attempt to re-subscribe) when the document becomes visible
+        // again or when the browser regains network connectivity.
+        const handleVisibilityRestore = async () => {
+          try {
+            if (!presenceChannelRef.current) return
+            if (!document.hidden) {
+              // Try to (re)track presence for this user
+              await presenceChannelRef.current.track({
+                userId: user.id,
+                name: profile.name || user.email,
+                email: user.email,
+                online_at: new Date().toISOString()
+              })
+              setConnected(true)
+              console.log('ℹ️ Presence re-tracked after visibility/online')
+            }
+          } catch (err) {
+            console.warn('Could not re-track presence, attempting to resubscribe', err)
+            try {
+              // Try a lightweight re-subscribe attempt
+              await presenceChannelRef.current.subscribe()
+            } catch (e) {
+              console.error('Resubscribe failed', e)
+            }
+          }
+        }
+
+        document.addEventListener('visibilitychange', handleVisibilityRestore)
+        window.addEventListener('online', handleVisibilityRestore)
+
         // Update profile status in database
         await supabase
           .from('profiles')
@@ -102,6 +134,14 @@ export const RealtimeProvider = ({ children }) => {
     // Cleanup on unmount or user change
     return () => {
       if (presenceChannelRef.current) {
+        try {
+          // Remove listeners we added when we created the channel
+          document.removeEventListener('visibilitychange', handleVisibilityRestore)
+        } catch (e) {}
+        try {
+          window.removeEventListener('online', handleVisibilityRestore)
+        } catch (e) {}
+
         presenceChannelRef.current.unsubscribe()
         presenceChannelRef.current = null
       }
