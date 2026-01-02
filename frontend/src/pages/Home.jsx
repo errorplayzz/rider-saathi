@@ -57,15 +57,14 @@ const Home = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 1 }}
           >
-            <h1 className="text-6xl md:text-8xl font-orbitron font-bold mb-6">
-              <span className="bg-gradient-to-r from-neon-cyan via-neon-purple to-neon-pink bg-clip-text text-transparent">
+            <h1 className="text-6xl md:text-8xl font-bold mb-6">
+              <span className="bg-gradient-to-r from-neon-cyan to-neon-purple bg-clip-text text-transparent">
                 Rider Saathi
               </span>
             </h1>
             
             <p className="text-xl md:text-2xl text-gray-300 mb-8 max-w-2xl mx-auto">
-              Your Ultimate Smart Ride Companion - GPS Tracking, Emergency Assistance, 
-              AI Navigation, and Real-time Communication for the Modern Rider
+              Your Ultimate Smart Ride Companion
             </p>
             
             <div className="flex justify-center items-center">
