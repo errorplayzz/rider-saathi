@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { io } from 'socket.io-client'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './AuthContext'
 import { 
@@ -23,10 +24,43 @@ export const SocketProvider = ({ children }) => {
   const [connected, setConnected] = useState(false)
   const [onlineUsers, setOnlineUsers] = useState([])
   const [activeChannels, setActiveChannels] = useState(new Map())
+  const [socketIO, setSocketIO] = useState(null) // Real Socket.IO connection
   const { user, profile } = useAuth()
   const listenersRef = React.useRef({})
 
-  // Presence channel for online/offline tracking
+  // Socket.IO connection for real-time features
+  useEffect(() => {
+    if (!user) return
+
+    const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5001'
+    const token = localStorage.getItem('token')
+
+    if (!token) return
+
+    const socket = io(SOCKET_URL, {
+      auth: { token },
+      transports: ['websocket', 'polling']
+    })
+
+    socket.on('connect', () => {
+      setSocketIO(socket)
+    })
+
+    socket.on('disconnect', () => {
+      // Handle disconnect
+    })
+
+    socket.on('error', (error) => {
+      console.error('Socket.IO Error:', error)
+    })
+
+    return () => {
+      socket.disconnect()
+      setSocketIO(null)
+    }
+  }, [user])
+
+  // Presence channel for online/offline tracking (Supabase)
   useEffect(() => {
     if (!user || !profile) {
       setConnected(false)
@@ -52,10 +86,10 @@ export const SocketProvider = ({ children }) => {
         setOnlineUsers(users)
       })
       .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        console.log('User joined:', key)
+        // User joined
       })
       .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        console.log('User left:', key)
+        // User left
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
@@ -70,7 +104,6 @@ export const SocketProvider = ({ children }) => {
           // Update database status
           await updateUserStatus(user.id, true)
           setConnected(true)
-          console.log('✅ Connected to Supabase Realtime')
         }
       })
 
@@ -90,7 +123,6 @@ export const SocketProvider = ({ children }) => {
             online_at: new Date().toISOString()
           })
           setConnected(true)
-          console.log('ℹ️ Presence re-tracked after visibility/online')
         }
       } catch (err) {
         console.warn('Could not re-track presence, attempting to resubscribe', err)
@@ -140,64 +172,57 @@ export const SocketProvider = ({ children }) => {
     }
   }, [user, profile])
 
-  // Subscribe to a chat room
+  // Subscribe to a chat room via Socket.IO
   const joinChatRoom = useCallback((roomId) => {
-    if (!roomId || activeChannels.has(roomId)) return
+    if (!roomId || !socketIO || !socketIO.connected) {
+      console.warn('Cannot join room: socket not connected')
+      return
+    }
 
-    const channel = supabase
-      .channel(`room:${roomId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `room_id=eq.${roomId}`
-        },
-        (payload) => {
-          // Emit custom event for components to listen to
-          window.dispatchEvent(
-            new CustomEvent('new-message', {
-              detail: { roomId, message: payload.new }
-            })
-          )
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log(`Joined chat room: ${roomId}`)
-        }
+    console.log('Joining chat room:', roomId)
+    socketIO.emit('join-chat-room', roomId)
+    
+    // Listen for new messages in this room
+    if (!socketIO.hasListeners('new-message')) {
+      socketIO.on('new-message', (messageData) => {
+        console.log('New message received:', messageData)
+        // Dispatch custom event for chat components to listen
+        window.dispatchEvent(new CustomEvent('new-message', {
+          detail: { roomId: messageData.room, message: messageData }
+        }))
       })
+    }
+  }, [socketIO])
 
-    setActiveChannels(prev => new Map(prev).set(roomId, channel))
-  }, [activeChannels])
-
-  // Leave a chat room
+  // Leave a chat room via Socket.IO
   const leaveChatRoom = useCallback((roomId) => {
-    const channel = activeChannels.get(roomId)
-    if (channel) {
-      channel.unsubscribe()
-      setActiveChannels(prev => {
-        const newMap = new Map(prev)
-        newMap.delete(roomId)
-        return newMap
-      })
-      console.log(`Left chat room: ${roomId}`)
+    if (!roomId || !socketIO || !socketIO.connected) {
+      console.warn('Cannot leave room: socket not connected')
+      return
     }
-  }, [activeChannels])
 
-  // Send a message
-  const sendMessage = useCallback(async (roomId, message, messageType = 'text') => {
-    if (!user) return
+    console.log('Leaving chat room:', roomId)
+    socketIO.emit('leave-chat-room', roomId)
+  }, [socketIO])
 
-    try {
-      const result = await sendMessageHelper(roomId, user.id, message, messageType)
-      return result
-    } catch (error) {
-      console.error('Error sending message:', error)
-      throw error
+  // Send a message via Socket.IO
+  const sendMessage = useCallback((roomId, message, messageType = 'text') => {
+    if (!user || !socketIO || !socketIO.connected) {
+      console.warn('Cannot send message: user not logged in or socket not connected')
+      return false
     }
-  }, [user])
+
+    const messageData = {
+      roomId,
+      message,
+      messageType,
+      senderId: user.id
+    }
+
+    console.log('Sending message via Socket.IO:', messageData)
+    socketIO.emit('send-message', messageData)
+    return true
+  }, [user, socketIO])
 
   // Update location
   const updateLocation = useCallback(async (location) => {
@@ -248,7 +273,7 @@ export const SocketProvider = ({ children }) => {
   }, [])
 
   // Provide a small socket-like API backed by window events so components can call socket.on/off
-  const socket = React.useMemo(() => {
+  const supabaseSocket = React.useMemo(() => {
     return {
       on: (event, cb) => {
         if (!event || typeof cb !== 'function') return
@@ -282,20 +307,43 @@ export const SocketProvider = ({ children }) => {
     if (!user) return
 
     try {
-      const alert = await createEmergencyAlertHelper(
-        user.id,
-        alertData.type,
-        alertData.severity,
-        alertData.location,
-        alertData.description
-      )
+      // Use backend API instead of direct Supabase
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5001/api'}/emergency/alert`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          type: alertData.type,
+          severity: alertData.severity,
+          location: {
+            latitude: alertData.location.latitude,
+            longitude: alertData.location.longitude,
+            address: alertData.location.address
+          },
+          description: alertData.description
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`Emergency alert failed: ${response.status}`)
+      }
+
+      const alert = await response.json()
+      
+      // Emit via Socket.IO for realtime updates
+      if (socketIO && socketIO.connected) {
+        socketIO.emit('emergency-alert', alert)
+      }
       
       return alert
     } catch (error) {
       console.error('Error sending emergency alert:', error)
       throw error
     }
-  }, [user])
+  }, [user, socketIO])
 
   // Join ride group (subscribe to ride updates)
   const joinRideGroup = useCallback((rideId) => {
@@ -343,7 +391,6 @@ export const SocketProvider = ({ children }) => {
 
     try {
       // You can store this in a separate battery_alerts table or in ride metrics
-      console.log('Battery alert:', batteryLevel)
       // For now, just broadcast via realtime
       const channel = supabase.channel('battery-alerts')
       await channel.send({
@@ -394,8 +441,10 @@ export const SocketProvider = ({ children }) => {
     leaveChatRoom,
     sendBatteryAlert,
     sendHelperAlert,
-    // Legacy compatibility - these are now handled differently
-    socket
+    // Real Socket.IO connection for map tracking
+    socket: socketIO,
+    // Legacy Supabase compatibility
+    supabaseSocket: supabaseSocket
   }
 
   return (

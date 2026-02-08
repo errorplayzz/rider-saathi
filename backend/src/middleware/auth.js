@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken'
 import mongoose from 'mongoose'
 import User from '../models/User.js'
+import { supabase } from '../config/supabase.js'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret'
 
@@ -24,12 +25,53 @@ export const auth = async (req, res, next) => {
     try {
       // If DB is disconnected (demo mode), accept any bearer token and proceed
       if (mongoose.connection.readyState !== 1) {
-        req.user = { id: 'demo-user-id', email: 'demo@ridersathi.com' }
+        req.user = {
+          _id: 'demo-user-id',
+          id: 'demo-user-id',
+          userId: 'demo-user-id',
+          email: 'demo@ridersathi.com'
+        }
         return next()
       }
 
-      // Verify token in DB-backed mode
-  const decoded = jwt.verify(token, JWT_SECRET)
+      // First, try to verify as Supabase token
+      const { data: { user: supabaseUser }, error: supabaseError } = await supabase.auth.getUser(token)
+      
+      if (supabaseUser && !supabaseError) {
+        // Valid Supabase token - find or create MongoDB user
+        let mongoUser = await User.findOne({ email: supabaseUser.email })
+        
+        if (!mongoUser) {
+          // Create new MongoDB user for Supabase user
+          mongoUser = new User({
+            name: supabaseUser.user_metadata?.name || supabaseUser.email.split('@')[0],
+            email: supabaseUser.email,
+            password: 'supabase-auth-' + Math.random().toString(36), // Random password, won't be used
+            isActive: true,
+            isVerified: true
+          })
+          await mongoUser.save()
+        }
+        
+        if (!mongoUser.isActive) {
+          return res.status(401).json({
+            success: false,
+            message: 'Account is deactivated'
+          })
+        }
+        
+        req.user = {
+          _id: mongoUser._id,
+          id: mongoUser._id,
+          userId: mongoUser._id,
+          email: mongoUser.email,
+          supabaseId: supabaseUser.id
+        }
+        return next()
+      }
+
+      // If not Supabase token, try MongoDB JWT token
+      const decoded = jwt.verify(token, JWT_SECRET)
 
       // Normal DB-backed auth
       const user = await User.findById(decoded.userId)
@@ -47,9 +89,10 @@ export const auth = async (req, res, next) => {
         })
       }
 
-      req.user = { id: user._id, email: user.email }
+      req.user = { _id: user._id, id: user._id, userId: user._id, email: user.email }
       next()
     } catch (error) {
+      console.error('Token verification error:', error.message)
       return res.status(401).json({
         success: false,
         message: 'Token is not valid'
@@ -138,3 +181,7 @@ export const adminAuth = async (req, res, next) => {
     })
   }
 }
+
+// Alias for compatibility
+export const protect = auth
+export const authMiddleware = auth

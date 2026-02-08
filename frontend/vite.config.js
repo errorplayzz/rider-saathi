@@ -13,7 +13,7 @@ export default defineConfig({
   // Proxy API requests to the backend during development to avoid CORS issues and 404s from Vite
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'http://localhost:5001',
         changeOrigin: true,
         secure: false,
   // preserve the /api prefix so backend routes (for example /api/ai/gpt) continue to match

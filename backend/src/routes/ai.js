@@ -7,7 +7,9 @@ const router = express.Router()
 // Health check for AI routes
 router.get('/ping', (req, res) => {
   const provider = process.env.GENERATIVE_PROVIDER || 'openai'
-  res.json({ success: true, message: 'AI route loaded', provider })
+  const hasKey = Boolean(process.env.OPENAI_API_KEY)
+  const model = process.env.OPENAI_MODEL || 'gpt-3.5-turbo'
+  res.json({ success: true, message: 'AI route loaded', provider, hasKey, model })
 })
 
 // @route   POST /api/ai/gpt

@@ -3,6 +3,8 @@ import multer from 'multer'
 import path from 'path'
 import jwt from 'jsonwebtoken'
 import mongoose from 'mongoose'
+import speakeasy from 'speakeasy'
+import qrcode from 'qrcode'
 import User from '../models/User.js'
 import { auth } from '../middleware/auth.js'
 
@@ -136,6 +138,16 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
+      })
+    }
+
+    // Check if 2FA is enabled
+    if (user.twoFactorEnabled) {
+      return res.json({
+        success: true,
+        requires2FA: true,
+        message: 'Please enter your 2FA code',
+        email: user.email
       })
     }
 
@@ -547,6 +559,233 @@ router.get('/nearby-users', auth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error fetching nearby users',
+      error: error.message
+    })
+  }
+})
+
+// @route   POST /api/auth/2fa/enable
+// @desc    Enable 2FA and generate QR code
+// @access  Private
+router.post('/2fa/enable', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('+twoFactorSecret')
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      })
+    }
+
+    if (user.twoFactorEnabled) {
+      return res.status(400).json({
+        success: false,
+        message: '2FA is already enabled'
+      })
+    }
+
+    // Generate secret
+    const secret = speakeasy.generateSecret({
+      name: `Rider Saathi (${user.email})`,
+      issuer: 'Rider Saathi'
+    })
+
+    // Generate QR code
+    const qrCodeUrl = await qrcode.toDataURL(secret.otpauth_url)
+
+    // Save secret temporarily (not enabled yet until verified)
+    user.twoFactorSecret = secret.base32
+    await user.save()
+
+    res.json({
+      success: true,
+      message: '2FA secret generated. Please scan QR code and verify.',
+      secret: secret.base32,
+      qrCode: qrCodeUrl
+    })
+  } catch (error) {
+    console.error('2FA enable error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error enabling 2FA',
+      error: error.message
+    })
+  }
+})
+
+// @route   POST /api/auth/2fa/verify
+// @desc    Verify and enable 2FA
+// @access  Private
+router.post('/2fa/verify', auth, async (req, res) => {
+  try {
+    const { token } = req.body
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token is required'
+      })
+    }
+
+    const user = await User.findById(req.user.userId).select('+twoFactorSecret')
+    
+    if (!user || !user.twoFactorSecret) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please enable 2FA first'
+      })
+    }
+
+    // Verify token
+    const verified = speakeasy.totp.verify({
+      secret: user.twoFactorSecret,
+      encoding: 'base32',
+      token: token,
+      window: 2
+    })
+
+    if (!verified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid verification code'
+      })
+    }
+
+    // Enable 2FA
+    user.twoFactorEnabled = true
+    await user.save()
+
+    res.json({
+      success: true,
+      message: '2FA enabled successfully'
+    })
+  } catch (error) {
+    console.error('2FA verify error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error verifying 2FA',
+      error: error.message
+    })
+  }
+})
+
+// @route   POST /api/auth/2fa/disable
+// @desc    Disable 2FA
+// @access  Private
+router.post('/2fa/disable', auth, async (req, res) => {
+  try {
+    const { token } = req.body
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification token is required to disable 2FA'
+      })
+    }
+
+    const user = await User.findById(req.user.userId).select('+twoFactorSecret')
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      })
+    }
+
+    if (!user.twoFactorEnabled) {
+      return res.status(400).json({
+        success: false,
+        message: '2FA is not enabled'
+      })
+    }
+
+    // Verify token before disabling
+    const verified = speakeasy.totp.verify({
+      secret: user.twoFactorSecret,
+      encoding: 'base32',
+      token: token,
+      window: 2
+    })
+
+    if (!verified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid verification code'
+      })
+    }
+
+    // Disable 2FA
+    user.twoFactorEnabled = false
+    user.twoFactorSecret = undefined
+    await user.save()
+
+    res.json({
+      success: true,
+      message: '2FA disabled successfully'
+    })
+  } catch (error) {
+    console.error('2FA disable error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error disabling 2FA',
+      error: error.message
+    })
+  }
+})
+
+// @route   POST /api/auth/2fa/validate
+// @desc    Validate 2FA token during login
+// @access  Public (but requires email/password first)
+router.post('/2fa/validate', async (req, res) => {
+  try {
+    const { email, token } = req.body
+
+    if (!email || !token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and token are required'
+      })
+    }
+
+    const user = await User.findOne({ email }).select('+twoFactorSecret')
+    
+    if (!user || !user.twoFactorEnabled) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid request'
+      })
+    }
+
+    // Verify token
+    const verified = speakeasy.totp.verify({
+      secret: user.twoFactorSecret,
+      encoding: 'base32',
+      token: token,
+      window: 2
+    })
+
+    if (!verified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid verification code'
+      })
+    }
+
+    // Generate JWT token
+    const jwtToken = generateToken(user._id)
+
+    res.json({
+      success: true,
+      message: '2FA validation successful',
+      token: jwtToken,
+      user: user.getPublicProfile()
+    })
+  } catch (error) {
+    console.error('2FA validate error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error validating 2FA',
       error: error.message
     })
   }

@@ -1,1753 +1,1365 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { motion } from 'framer-motion'
-import { 
+import { motion, AnimatePresence } from 'framer-motion'
+import {
   PaperAirplaneIcon,
-  PhoneIcon,
-  VideoCameraIcon,
+  MagnifyingGlassIcon,
   UserGroupIcon,
   MapPinIcon,
-  EllipsisVerticalIcon,
   PhotoIcon,
-  MicrophoneIcon,
-  XMarkIcon,
-  PlusIcon,
-  MagnifyingGlassIcon,
-  PencilIcon,
-  TrashIcon,
+  LinkIcon,
+  ChatBubbleLeftIcon,
+  HeartIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
+  ChatBubbleOvalLeftEllipsisIcon,
+  EllipsisVerticalIcon,
+  UserPlusIcon,
   CheckIcon,
+  XMarkIcon,
+  VideoCameraIcon,
   PlayIcon,
-  PauseIcon,
-  StopIcon
+  GlobeAltIcon,
+  ShieldCheckIcon,
+  BoltIcon,
+  UserCircleIcon,
+  Squares2X2Icon,
+  UsersIcon,
+  PlusCircleIcon,
+  FlagIcon,
+  StarIcon
 } from '@heroicons/react/24/outline'
-import { ChatBubbleLeftIcon } from '@heroicons/react/24/outline'
+import { HeartIcon as HeartSolidIcon } from '@heroicons/react/24/solid'
 import { useAuth } from '../contexts/AuthContext'
 import { useSocket } from '../contexts/SocketContext'
-import { supabase } from '../lib/supabase'
-import {
-  getNearbyUsers,
-  getChatRooms,
-  getRoomMessages,
-  sendMessage,
-  editMessage,
-  deleteMessage,
-  createChatRoom,
-  deleteRoom,
-  uploadChatMedia,
-  addRoomParticipants
-} from '../lib/supabaseHelpers'
+import { friendsAPI, messagesAPI, groupsAPI, communitiesAPI, postsAPI } from '../services/chatAPI'
 
 const Chat = () => {
-  const [messages, setMessages] = useState([])
-  const [newMessage, setNewMessage] = useState('')
-  const [activeChat, setActiveChat] = useState(null)
-  const [nearbyRiders, setNearbyRiders] = useState([])
-  const [groupChats, setGroupChats] = useState([])
-  const [isRecording, setIsRecording] = useState(false)
-  const [showCreateGroup, setShowCreateGroup] = useState(false)
-  const [newGroupName, setNewGroupName] = useState('')
-  const [selectedUsers, setSelectedUsers] = useState([])
-  const [showParticipants, setShowParticipants] = useState(false)
-  const [showAddMembers, setShowAddMembers] = useState(false)
-  const [addSelectedUsers, setAddSelectedUsers] = useState([])
-  const [searchQuery, setSearchQuery] = useState('')
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const [isUploading, setIsUploading] = useState(false)
-  const [editingMessageId, setEditingMessageId] = useState(null)
-  const [editedContent, setEditedContent] = useState('')
-  const [messageMenuOpen, setMessageMenuOpen] = useState(null)
-  const [isRecordingVoice, setIsRecordingVoice] = useState(false)
-  const [recordingTime, setRecordingTime] = useState(0)
-  const [audioBlob, setAudioBlob] = useState(null)
-  const [playingAudioId, setPlayingAudioId] = useState(null)
-  const [showGroupMenu, setShowGroupMenu] = useState(false)
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [deleteConfirmText, setDeleteConfirmText] = useState('')
-
-  
-  const messagesEndRef = useRef(null)
-  const fileInputRef = useRef(null)
-  const realtimeChannelRef = useRef(null)
-  const mediaRecorderRef = useRef(null)
-  const audioChunksRef = useRef([])
-  const recordingIntervalRef = useRef(null)
-  const audioPlayerRef = useRef({})
-  
   const { user } = useAuth()
-  const { connected, onlineUsers, joinChatRoom } = useSocket()
+  const { connected, onlineUsers, sendMessage, joinChatRoom } = useSocket()
 
+  // Panel States
+  const [activeTab, setActiveTab] = useState('friends') // friends | communities | nearby | groups
+  const [selectedChat, setSelectedChat] = useState(null) // { type: 'dm' | 'community' | 'group', id, data }
+  const [viewMode, setViewMode] = useState('chat') // chat | feed
+
+  // Data States
+  const [friends, setFriends] = useState([])
+  const [friendRequests, setFriendRequests] = useState([])
+  const [communities, setCommunities] = useState([])
+  const [nearbyRiders, setNearbyRiders] = useState([])
+  const [groups, setGroups] = useState([])
+  const [messages, setMessages] = useState([])
+  const [posts, setPosts] = useState([])
+  const [conversations, setConversations] = useState([])
+  const [loading, setLoading] = useState(true)
+  
+  // Group Creation States
+  const [showGroupModal, setShowGroupModal] = useState(false)
+  const [groupData, setGroupData] = useState({
+    name: '',
+    description: '',
+    type: 'private', // private | public
+    city: '',
+    route: '',
+    selectedMembers: []
+  })
+  
+  // UI States
+  const [searchQuery, setSearchQuery] = useState('')
+  const [messageInput, setMessageInput] = useState('')
+  const [postInput, setPostInput] = useState('')
+  const [showNewPost, setShowNewPost] = useState(false)
+  const [selectedPost, setSelectedPost] = useState(null)
+  const [showMediaUpload, setShowMediaUpload] = useState(false)
+  const [sendingMessage, setSendingMessage] = useState(false)
+
+  const messagesEndRef = useRef(null)
+
+  // Load real data from backend
   useEffect(() => {
-    // Don't attempt to fetch protected resources before we know the user (and auth header) is ready
-    if (!user) return
-
-    fetchNearbyRiders()
-    fetchGroupChats()
-    scrollToBottom()
-    
-    // Voice call handling removed - using Supabase Realtime now
-    // No socket needed here anymore
-
-    // Cleanup
-    return () => {
-      // Cleanup voice recording
-      if (mediaRecorderRef.current && isRecordingVoice) {
-        mediaRecorderRef.current.stop()
-      }
-      if (recordingIntervalRef.current) {
-        clearInterval(recordingIntervalRef.current)
-      }
-      // Cleanup audio players
-      Object.values(audioPlayerRef.current).forEach(audio => {
-        audio.pause()
-        audio.src = ''
-      })
+    if (user) {
+      loadAllData()
+      loadNearbyRiders()
     }
+  }, [user])
 
-    // Listen for new messages from server and update UI
-    const handleNewMessage = (payload) => {
-      try {
-        const { chatId, message } = payload
-        if (!chatId || !message) return
+  // Load nearby riders when on nearby tab
+  useEffect(() => {
+    if (user && activeTab === 'nearby') {
+      loadNearbyRiders()
+    }
+  }, [user, activeTab])
 
-        // If the message belongs to the active chat, append it
-        if (activeChat && (activeChat.id === chatId || activeChat.id === (message.room || chatId))) {
-          setMessages(prev => {
-            // Check if we already have this message (avoid duplicates)
-            const exists = prev.some(m => m.id === message._id || m._id === message._id)
-            if (exists) return prev
+  const loadAllData = async () => {
+    try {
+      setLoading(true)
+      const [friendsRes, requestsRes, groupsRes, communitiesRes, conversationsRes] = await Promise.all([
+        friendsAPI.getFriends().catch(() => ({ data: [] })),
+        friendsAPI.getFriendRequests().catch(() => ({ data: [] })),
+        groupsAPI.getMyGroups().catch(() => ({ data: [] })),
+        communitiesAPI.getMyCommunities().catch(() => ({ data: [] })),
+        messagesAPI.getConversations().catch(() => ({ data: [] }))
+      ])
+
+      setFriends(friendsRes.data || [])
+      setFriendRequests(requestsRes.data || [])
+      setGroups(groupsRes.data || [])
+      setCommunities(communitiesRes.data || [])
+      setConversations(conversationsRes.data || [])
+    } catch (error) {
+      console.error('Failed to load chat data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadNearbyRiders = async () => {
+    try {
+      // Get user's current location
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            const { latitude, longitude } = position.coords
+            console.log('Loading nearby riders at:', latitude, longitude)
             
-            // Remove any temp "sending" messages from same user with similar content
-            const filtered = prev.filter(m => 
-              !(m.sending && m.sender?.id === message.sender?.id && m.content === message.content)
-            )
-            
-            // Add the new message
-            return [...filtered, {
-              id: message._id,
-              _id: message._id,
-              sender: message.sender,
-              content: message.content || message.message,
-              type: message.type || message.messageType || 'text',
-              media: message.media,
-              media_url: message.media_url || message.media?.url,
-              location: message.location,
-              timestamp: message.timestamp || message.createdAt || new Date().toISOString()
-            }]
-          })
-          setTimeout(scrollToBottom, 50)
-        } else {
-          // Optionally: show toast/unread indicator for other rooms
-          console.log('New message for other room', chatId)
-        }
-      } catch (e) {
-        console.error('Error handling new-message', e)
-      }
-    }
-
-    const handleJoinedRoom = ({ roomId }) => {
-      // when server acknowledges join, we can fetch messages
-      if (activeChat && activeChat.id === roomId) {
-        fetchMessages(roomId)
-      }
-    }
-
-    const handleUserJoinedChat = (data) => {
-      // update participants list when someone joins
-      if (!data || !data.userId) return
-      setGroupChats(prev => prev.map(g => {
-        if (g.id === activeChat?.id) {
-          // avoid duplicates
-          const already = g.participants.some(p => (p.user?._id || p.user || p) === data.userId)
-          if (!already) {
-            return { ...g, participants: [...g.participants, { user: data.userId }] }
-          }
-        }
-        return g
-      }))
-    }
-
-    const handleUserLeftChat = (data) => {
-      if (!data || !data.userId) return
-      setGroupChats(prev => prev.map(g => {
-        if (g.id === activeChat?.id) {
-          return { ...g, participants: g.participants.filter(p => (p.user?._id || p.user || p) !== data.userId) }
-        }
-        return g
-      }))
-    }
-
-    const handleMessageSent = ({ tempId, messageId, timestamp }) => {
-      // Update temp message with real ID from server
-      setMessages(prev => prev.map(m => 
-        m.id === tempId ? { ...m, id: messageId, _id: messageId, timestamp, sending: false } : m
-      ))
-      console.log('Message confirmed by server:', messageId)
-    }
-
-    // Supabase Realtime subscription for this room
-    if (activeChat?.id) {
-      console.log('📡 Setting up realtime for room:', activeChat.id)
-      
-      const channel = supabase
-        .channel(`room:${activeChat.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `room_id=eq.${activeChat.id}`
+            const nearbyRes = await friendsAPI.getNearbyRiders(latitude, longitude, 5000)
+            setNearbyRiders(nearbyRes.data || [])
+            console.log('Found nearby riders:', nearbyRes.data?.length || 0)
           },
-          (payload) => {
-            console.log('📩 New message via Supabase Realtime:', payload.new)
-            
-            const newMsg = payload.new
-            
-            // Skip if message is deleted
-            if (newMsg.is_deleted) {
-              console.log('⏭️ Skipping deleted message')
-              return
-            }
-            
-            // Skip if it's our own message (already added from sendMessage response)
-            if (newMsg.sender_id === user.id) {
-              console.log('⏭️ Skipping own message (already added)')
-              return
-            }
-            
-            // Add message if not already in list
-            setMessages(prev => {
-              const exists = prev.some(m => m.id === newMsg.id)
-              if (exists) {
-                return prev // Already have this message
+          (error) => {
+            console.warn('Location access denied:', error)
+            // Set some sample riders for demo purposes
+            setNearbyRiders([
+              { 
+                id: 'demo1', 
+                _id: 'demo1',
+                name: 'Alex Kumar', 
+                bike: 'Royal Enfield Classic 350', 
+                distance: '2.3km', 
+                online: true 
+              },
+              { 
+                id: 'demo2', 
+                _id: 'demo2',
+                name: 'Priya Singh', 
+                bike: 'KTM Duke 390', 
+                distance: '3.1km', 
+                online: true 
+              },
+              { 
+                id: 'demo3', 
+                _id: 'demo3',
+                name: 'Rahul Sharma', 
+                bike: 'Honda CB Hornet 160R', 
+                distance: '4.7km', 
+                online: false 
               }
-              
-              return [...prev, {
-                id: newMsg.id,
-                _id: newMsg.id,
-                sender: {
-                  id: newMsg.sender_id,
-                  name: 'Other User', // Will be fetched on page load
-                  avatar_url: null
-                },
-                content: newMsg.content,
-                type: newMsg.message_type || 'text',
-                media_url: newMsg.media_url,
-                timestamp: newMsg.created_at,
-                sending: false
-              }]
-            })
-            
-            setTimeout(scrollToBottom, 100)
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'messages',
-            filter: `room_id=eq.${activeChat.id}`
+            ])
           },
-          (payload) => {
-            console.log('📝 Message updated via Supabase Realtime:', payload.new)
-            
-            const updatedMsg = payload.new
-            
-            // If message is deleted, remove it from UI
-            if (updatedMsg.is_deleted) {
-              console.log('🗑️ Message deleted, removing from UI')
-              setMessages(prev => prev.filter(m => m.id !== updatedMsg.id))
-              return
-            }
-            
-            // If message is edited, update it in UI
-            setMessages(prev => prev.map(m => 
-              m.id === updatedMsg.id
-                ? {
-                    ...m,
-                    content: updatedMsg.content,
-                    edited_at: updatedMsg.edited_at
-                  }
-                : m
-            ))
+          {
+            enableHighAccuracy: false,
+            timeout: 5000,
+            maximumAge: 300000 // 5 minutes
           }
         )
-        .subscribe((status) => {
-          console.log('Realtime subscription status:', status)
-          if (status === 'SUBSCRIBED') {
-            console.log('✅ Subscribed to room:', activeChat.id)
+      } else {
+        console.warn('Geolocation not supported')
+        // Set demo riders if geolocation not available
+        setNearbyRiders([
+          { 
+            id: 'demo1', 
+            _id: 'demo1',
+            name: 'Alex Kumar', 
+            bike: 'Royal Enfield Classic 350', 
+            distance: '2.3km', 
+            online: true 
+          },
+          { 
+            id: 'demo2', 
+            _id: 'demo2',
+            name: 'Priya Singh', 
+            bike: 'KTM Duke 390', 
+            distance: '3.1km', 
+            online: true 
           }
-        })
+        ])
+      }
+    } catch (error) {
+      console.error('Failed to load nearby riders:', error)
+      // Still set demo data for testing
+      setNearbyRiders([
+        { 
+          id: 'demo1', 
+          _id: 'demo1',
+          name: 'Alex Kumar', 
+          bike: 'Royal Enfield Classic 350', 
+          distance: '2.3km', 
+          online: true 
+        }
+      ])
+    }
+  }
 
-      realtimeChannelRef.current = channel
+  // Listen for real-time messages
+  useEffect(() => {
+    if (!selectedChat) return
+
+    const handleNewMessage = (event) => {
+      const { message, roomId } = event.detail
+      
+      // Only add message if it's for the currently selected chat
+      if (roomId === selectedChat.id) {
+        setMessages(prev => [...prev, {
+          _id: message._id,
+          content: message.content,
+          sender: message.sender,
+          type: message.type,
+          timestamp: message.timestamp,
+          createdAt: message.timestamp
+        }])
+        scrollToBottom()
+      }
+    }
+
+    // Listen for real-time messages
+    window.addEventListener('new-message', handleNewMessage)
+
+    // Join the chat room for real-time updates
+    if (joinChatRoom) {
+      joinChatRoom(selectedChat.id)
     }
 
     return () => {
-      // Cleanup Supabase Realtime
-      if (realtimeChannelRef.current) {
-        console.log('🔌 Unsubscribing from room')
-        supabase.removeChannel(realtimeChannelRef.current)
-        realtimeChannelRef.current = null
-      }
+      window.removeEventListener('new-message', handleNewMessage)
     }
-  }, [activeChat, user])
-
-  useEffect(() => {
-    if (activeChat) {
-      // joinChatRoom is handled by SocketContext presence
-      // No need to call it here - Supabase Realtime subscription handles it
-      fetchMessages(activeChat.id)
-    }
-  }, [activeChat])
-
-  // Close message menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (messageMenuOpen && !event.target.closest('.message-menu')) {
-        setMessageMenuOpen(null)
-      }
-      if (showGroupMenu && !event.target.closest('.group-menu')) {
-        setShowGroupMenu(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [messageMenuOpen, showGroupMenu])
+  }, [selectedChat, joinChatRoom])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
-  const fetchNearbyRiders = async () => {
-    if (!navigator.geolocation) return
+  const sendFriendRequest = async (userId) => {
+    try {
+      await friendsAPI.sendFriendRequest(userId, 'Hi! I\'d like to connect with you on Rider Saathi!')
+      
+      // Show success feedback
+      console.log('Friend request sent!')
+      
+      // Optionally remove from nearby riders or show as pending
+      setNearbyRiders(prev => prev.filter(rider => rider._id !== userId))
+      
+    } catch (error) {
+      console.error('Failed to send friend request:', error)
+      alert('Failed to send friend request. Please try again.')
+    }
+  }
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const users = await getNearbyUsers(
-            position.coords.longitude,
-            position.coords.latitude,
-            5000
-          )
-          setNearbyRiders(users || [])
-        } catch (error) {
-          console.error('Nearby riders fetch error:', error)
-          // Set empty array on error to prevent UI issues
-          setNearbyRiders([])
-        }
-      },
-      (error) => {
-        console.error('Location error:', error)
-        setNearbyRiders([])
+  const handleUpvote = (postId) => {
+    setPosts(prev => prev.map(p => 
+      p._id === postId ? { ...p, upvotes: (p.upvotes || 0) + 1 } : p
+    ))
+  }
+
+  const handleDownvote = (postId) => {
+    setPosts(prev => prev.map(p => 
+      p._id === postId ? { ...p, downvotes: (p.downvotes || 0) + 1 } : p
+    ))
+  }
+
+  // Real API handlers
+  const acceptFriendRequest = async (requestId) => {
+    try {
+      await friendsAPI.acceptFriendRequest(requestId)
+      setFriendRequests(prev => prev.filter(r => r._id !== requestId))
+      await loadAllData() // Reload to get updated friends list
+    } catch (error) {
+      console.error('Failed to accept friend request:', error)
+    }
+  }
+
+  const rejectFriendRequest = async (requestId) => {
+    try {
+      await friendsAPI.rejectFriendRequest(requestId)
+      setFriendRequests(prev => prev.filter(r => r._id !== requestId))
+    } catch (error) {
+      console.error('Failed to reject friend request:', error)
+    }
+  }
+
+  const createGroup = async () => {
+    if (!groupData.name.trim()) return
+
+    try {
+      const newGroupData = {
+        name: groupData.name,
+        description: groupData.description,
+        type: groupData.type,
+        city: groupData.city,
+        route: groupData.route,
+        members: groupData.selectedMembers
       }
-    )
-  }
 
-  const fetchGroupChats = async () => {
-    try {
-      const rooms = await getChatRooms(user.id, 'group')
-      setGroupChats((rooms || []).map(r => ({ 
-        id: r.id, 
-        name: r.name, 
-        participants: r.participants || [] 
-      })))
+      const response = await groupsAPI.createGroup(newGroupData)
+      setGroups(prev => [response.data, ...prev])
+      setGroupData({
+        name: '',
+        description: '',
+        type: 'private',
+        city: '',
+        route: '',
+        selectedMembers: []
+      })
+      setShowGroupModal(false)
+      setSelectedChat({ type: 'group', id: response.data._id, data: response.data })
     } catch (error) {
-      console.error('Group chats fetch error:', error)
-      // Set empty array on error to prevent UI issues
-      setGroupChats([])
+      console.error('Failed to create group:', error)
     }
   }
 
-  const fetchMessages = async (chatId) => {
-    try {
-      const msgs = await getRoomMessages(chatId)
-      setMessages(msgs || [])
-      setTimeout(scrollToBottom, 100)
-    } catch (error) {
-      console.error('Messages fetch error:', error)
-    }
+  const toggleMemberSelection = (friendId) => {
+    setGroupData(prev => ({
+      ...prev,
+      selectedMembers: prev.selectedMembers.includes(friendId)
+        ? prev.selectedMembers.filter(id => id !== friendId)
+        : [...prev.selectedMembers, friendId]
+    }))
   }
 
-  const isUserAdmin = () => {
-    if (!activeChat || !activeChat.participants || !user) return false
-    const myParticipant = activeChat.participants.find(p => {
-      const userId = p.user?.id || p.user?._id || p.user || p.id || p._id
-      return userId === user.id || userId === user._id
-    })
-    return myParticipant?.role === 'admin'
+  const handleOpenChat = async (chatType, chatData) => {
+    try {
+      setSelectedChat({ type: chatType, id: chatData._id, data: chatData })
+      
+      if (chatType === 'dm') {
+        const messagesRes = await messagesAPI.getConversation(chatData._id)
+        setMessages(messagesRes.data || [])
+        if (joinChatRoom) joinChatRoom(chatData._id)
+      } else if (chatType === 'group') {
+        const messagesRes = await groupsAPI.getGroupMessages(chatData._id)
+        setMessages(messagesRes.data || [])
+        if (joinChatRoom) joinChatRoom(chatData._id)
+      } else if (chatType === 'community') {
+        const postsRes = await postsAPI.getFeed(chatData._id)
+        setPosts(postsRes.data || [])
+        if (joinChatRoom) joinChatRoom(chatData._id)
+      }
+    } catch (error) {
+      console.error('Failed to load chat:', error)
+      setMessages([])
+    }
   }
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !activeChat) return
-
-    const messageText = newMessage.trim()
-    const tempId = `temp-${Date.now()}`
-    setNewMessage('') // Clear input immediately
-
-    try {
-      // Optimistic update - add message immediately to UI
-      const tempMessage = {
-        id: tempId,
-        sender: {
-          id: user.id,
-          name: user.name || 'You',
-          avatar_url: user.avatar_url
-        },
-        content: messageText,
-        type: 'text',
-        timestamp: new Date().toISOString(),
-        sending: true // Flag to show it's being sent
-      }
-      
-      setMessages(prev => [...prev, tempMessage])
-      scrollToBottom()
-
-      // Send via Supabase (no socket.io)
-      console.log('📤 Sending message via Supabase...')
-      const msg = await sendMessage(activeChat.id, user.id, messageText, 'text')
-      
-      console.log('✅ Message sent:', msg)
-      
-      // Remove temp message and add real one immediately
-      setMessages(prev => {
-        // Remove temp
-        const filtered = prev.filter(m => m.id !== tempId)
-        
-        // Add real message (from sendMessage response with full data)
-        return [...filtered, {
-          id: msg.id,
-          _id: msg.id,
-          sender: {
-            id: msg.sender.id,
-            name: msg.sender.name,
-            avatar_url: msg.sender.avatar_url
-          },
-          content: msg.content,
-          type: msg.message_type,
-          media_url: msg.media_url,
-          timestamp: msg.created_at,
-          sending: false
-        }]
-      })
-      
-      scrollToBottom()
-      
-    } catch (error) {
-      console.error('Send message error:', error)
-      alert('Failed to send message')
-      // Remove the failed message
-      setMessages(prev => prev.filter(m => m.id !== tempId))
-    }
-  }
-
-  const startPrivateChat = async (riderId) => {
-    try {
-      const room = await createChatRoom(
-        'Private Chat',
-        'private',
-        [user.id, riderId]
-      )
-      setActiveChat({
-        id: room.id,
-        name: room.name || 'Private Chat',
-        type: room.room_type || 'private',
-        participants: []
-      })
-    } catch (error) {
-      console.error('Start private chat error:', error)
-    }
-  }
-
-  const createGroupChat = async () => {
-    if (!newGroupName.trim() || selectedUsers.length === 0) {
-      alert('Please enter a group name and select at least one participant')
-      return
-    }
-
-    try {
-      const room = await createChatRoom(
-        newGroupName,
-        'group',
-        [...selectedUsers, user.id]
-      )
-
-      // normalize the room object for frontend usage
-      const normalized = {
-        id: room.id,
-        name: room.name,
-        participants: []
-      }
-
-      setGroupChats(prev => [...prev, normalized])
-      setShowCreateGroup(false)
-      setNewGroupName('')
-      setSelectedUsers([])
-
-      setActiveChat({
-        id: normalized.id,
-        name: normalized.name,
-        type: 'group',
-        participants: normalized.participants
-      })
-
-      // Realtime subscription will handle new room automatically
-      // No socket needed - Supabase Realtime does it
-
-      // Ensure the server-side list is reflected in the UI (avoids race where creation succeeded but
-      // subsequent page refresh / fetch may not yet include the new room due to auth/fetch timing)
-      await fetchGroupChats()
-    } catch (error) {
-      console.error('Create group error:', error)
-    }
-  }
-
-  const startVoiceCall = () => {
-    if (!activeChat) return
-
-    // Voice calling feature - to be implemented with Supabase Realtime or WebRTC
-    alert('Voice calling feature coming soon!')
+    if (!messageInput.trim() || sendingMessage) return
     
-    // TODO: Implement with Supabase Realtime broadcast or dedicated WebRTC solution
-    return
-
-    // pick a target participant (first other user)
-    const target = activeChat.participants.find(p => {
-      const pid = p?.user?._id || p?.user || p?._id || p
-      return pid?.toString() !== (user.id || user._id)?.toString()
-    })
-    const targetUserId = target ? (target.user?._id || target.user || target._id || target) : null
-
-    if (!targetUserId) {
-      alert('No other participant available to call')
-      return
-    }
-
-    // Voice call code removed - implement with Supabase Realtime later
-    console.log('Voice call to:', targetUserId)
-  }
-
-  const startVideoCall = () => {
-    if (!activeChat) return
-
-    // Video calling feature - to be implemented with Supabase Realtime or WebRTC
-    alert('Video calling feature coming soon!')
-    
-    // TODO: Implement with Supabase Realtime broadcast or dedicated WebRTC solution
-    return
-
-    const target = activeChat.participants.find(p => {
-      const pid = p?.user?._id || p?.user || p?._id || p
-      return pid?.toString() !== (user.id || user._id)?.toString()
-    })
-    const targetUserId = target ? (target.user?._id || target.user || target._id || target) : null
-
-    if (!targetUserId) {
-      alert('No other participant available to call')
-      return
-    }
-
-    // Video call code removed - implement with Supabase Realtime later
-    console.log('Video call to:', targetUserId)
-  }
-
-  const handleEditMessage = async (messageId, newContent) => {
-    if (!newContent.trim()) {
-      alert('Message cannot be empty')
-      return
-    }
+    const content = messageInput.trim()
+    setMessageInput('')
+    setSendingMessage(true)
 
     try {
-      const updatedMessage = await editMessage(messageId, newContent)
-      
-      // Update message in local state
-      setMessages(prev => prev.map(m => 
-        (m.id || m._id) === messageId 
-          ? { ...m, content: newContent, edited_at: updatedMessage.edited_at }
-          : m
-      ))
-      
-      setEditingMessageId(null)
-      setEditedContent('')
-      setMessageMenuOpen(null)
-      console.log('✅ Message edited successfully')
-    } catch (error) {
-      console.error('Edit message error:', error)
-      alert(`Failed to edit message: ${error.message}`)
-    }
-  }
-
-  const handleDeleteMessage = async (messageId) => {
-    if (!confirm('Are you sure you want to delete this message?')) {
-      return
-    }
-
-    try {
-      await deleteMessage(messageId)
-      
-      // Remove message from local state
-      setMessages(prev => prev.filter(m => (m.id || m._id) !== messageId))
-      
-      setMessageMenuOpen(null)
-      console.log('✅ Message deleted successfully')
-    } catch (error) {
-      console.error('Delete message error:', error)
-      alert(`Failed to delete message: ${error.message}`)
-    }
-  }
-
-  const handleDeleteGroup = async () => {
-    if (deleteConfirmText !== 'CONFIRM') {
-      alert('Please type "CONFIRM" to delete the group')
-      return
-    }
-
-    try {
-      await deleteRoom(activeChat.id)
-      
-      // Remove group from local state
-      setGroupChats(prev => prev.filter(g => g.id !== activeChat.id))
-      
-      // Close all modals
-      setShowDeleteConfirm(false)
-      setShowGroupMenu(false)
-      setDeleteConfirmText('')
-      
-      // Clear active chat
-      setActiveChat(null)
-      setMessages([])
-      
-      console.log('✅ Group deleted successfully')
-      alert('Group deleted successfully')
-    } catch (error) {
-      console.error('Delete group error:', error)
-      alert(`Failed to delete group: ${error.message}`)
-    }
-  }
-
-  const startVoiceRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      
-      const mediaRecorder = new MediaRecorder(stream)
-      mediaRecorderRef.current = mediaRecorder
-      audioChunksRef.current = []
-      
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data)
+      // Send via Socket.IO for real-time messaging
+      if (sendMessage && connected) {
+        const success = sendMessage(selectedChat.id, content)
+        if (!success) {
+          throw new Error('Failed to send message via Socket.IO')
         }
-      }
-      
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-        setAudioBlob(audioBlob)
-        stream.getTracks().forEach(track => track.stop())
-      }
-      
-      mediaRecorder.start()
-      setIsRecordingVoice(true)
-      setRecordingTime(0)
-      
-      // Start timer
-      recordingIntervalRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1)
-      }, 1000)
-      
-      console.log('🎤 Voice recording started')
-    } catch (error) {
-      console.error('Voice recording error:', error)
-      alert('Could not access microphone. Please check permissions.')
-    }
-  }
-
-  const stopVoiceRecording = () => {
-    if (mediaRecorderRef.current && isRecordingVoice) {
-      mediaRecorderRef.current.stop()
-      setIsRecordingVoice(false)
-      
-      if (recordingIntervalRef.current) {
-        clearInterval(recordingIntervalRef.current)
-        recordingIntervalRef.current = null
-      }
-      
-      console.log('🎤 Voice recording stopped')
-    }
-  }
-
-  const cancelVoiceRecording = () => {
-    stopVoiceRecording()
-    setAudioBlob(null)
-    setRecordingTime(0)
-    audioChunksRef.current = []
-    console.log('🎤 Voice recording cancelled')
-  }
-
-  const sendVoiceMessage = async () => {
-    if (!audioBlob || !activeChat) return
-
-    try {
-      setIsUploading(true)
-      setUploadProgress(0)
-      
-      const tempId = Date.now()
-      const loadingMessage = {
-        id: tempId,
-        sender: { id: user.id, name: user.name || 'You' },
-        content: 'Sending voice message...',
-        type: 'voice',
-        timestamp: new Date().toISOString(),
-        isUploading: true
-      }
-      setMessages(prev => [...prev, loadingMessage])
-      
-      // Convert blob to file
-      const voiceFile = new File([audioBlob], `voice-${Date.now()}.webm`, { type: 'audio/webm' })
-      
-      // Upload voice file
-      const mediaData = await uploadChatMedia(activeChat.id, user.id, voiceFile, (progress) => {
-        setUploadProgress(progress)
-      })
-      
-      // Remove loading message
-      setMessages(prev => prev.filter(m => m.id !== tempId))
-      setIsUploading(false)
-      setUploadProgress(0)
-      
-      // Send voice message
-      const duration = recordingTime // Store duration
-      
-      // Try sending with voice_duration, fallback without it if column doesn't exist
-      let msg
-      try {
-        msg = await sendMessage(
-          activeChat.id,
-          user.id,
-          `Voice message (${formatDuration(duration)})`,
-          'voice',
-          {
-            media_url: mediaData.url,
-            media_type: 'audio/webm',
-            media_size: voiceFile.size,
-            voice_duration: duration
-          }
-        )
-      } catch (error) {
-        if (error.message && error.message.includes('voice_duration')) {
-          // Column doesn't exist, send without it
-          console.log('⚠️ voice_duration column not found, sending without it')
-          msg = await sendMessage(
-            activeChat.id,
-            user.id,
-            `Voice message (${formatDuration(duration)})`,
-            'voice',
-            {
-              media_url: mediaData.url,
-              media_type: 'audio/webm',
-              media_size: voiceFile.size
-            }
-          )
-        } else {
-          throw error
-        }
-      }
-      
-      // Add message immediately
-      if (msg && msg.data && msg.data[0]) {
-        const newMsg = msg.data[0]
-        setMessages(prev => {
-          const exists = prev.some(m => (m.id || m._id) === (newMsg.id || newMsg._id))
-          if (exists) return prev
-          return [...prev, newMsg]
-        })
-      }
-      
-      // Reset voice recording state
-      setAudioBlob(null)
-      setRecordingTime(0)
-      audioChunksRef.current = []
-      
-      scrollToBottom()
-      console.log('✅ Voice message sent')
-    } catch (error) {
-      console.error('Voice message send error:', error)
-      setIsUploading(false)
-      setUploadProgress(0)
-      setMessages(prev => prev.filter(m => !m.isUploading))
-      alert(`Failed to send voice message: ${error.message}`)
-    }
-  }
-
-  const toggleAudioPlayback = (messageId, audioUrl) => {
-    const audio = audioPlayerRef.current[messageId]
-    
-    if (audio) {
-      if (playingAudioId === messageId) {
-        // Pause current audio
-        audio.pause()
-        setPlayingAudioId(null)
+        console.log('Message sent via Socket.IO')
       } else {
-        // Play this audio
-        audio.play()
-        setPlayingAudioId(messageId)
-      }
-    } else {
-      // Create new audio element
-      const newAudio = new Audio(audioUrl)
-      audioPlayerRef.current[messageId] = newAudio
-      
-      newAudio.onended = () => {
-        setPlayingAudioId(null)
-      }
-      
-      newAudio.onerror = () => {
-        console.error('Audio playback error')
-        setPlayingAudioId(null)
-      }
-      
-      newAudio.play()
-      setPlayingAudioId(messageId)
-    }
-  }
-
-  const formatDuration = (seconds) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
-
-  const handleFileUpload = async (event) => {
-    const file = event.target.files[0]
-    if (!file || !activeChat) return
-
-    try {
-      // Show loading state with progress
-      setIsUploading(true)
-      setUploadProgress(0)
-      
-      const tempId = Date.now()
-      const loadingMessage = {
-        id: tempId,
-        sender: { id: user.id, name: user.name || 'You' },
-        content: 'Uploading... 0%',
-        type: 'text',
-        timestamp: new Date().toISOString(),
-        isUploading: true
-      }
-      setMessages(prev => [...prev, loadingMessage])
-      
-      // Upload file to Supabase storage with progress tracking
-      const mediaData = await uploadChatMedia(activeChat.id, user.id, file, (progress) => {
-        setUploadProgress(progress)
-        // Update loading message with progress
-        setMessages(prev => prev.map(m => 
-          m.id === tempId 
-            ? { ...m, content: `Uploading... ${progress}%` }
-            : m
-        ))
-      })
-      
-      // Upload complete - remove loading message
-      setMessages(prev => prev.filter(m => m.id !== tempId))
-      setIsUploading(false)
-      setUploadProgress(0)
-      
-      // Send message with file URL via Supabase (no socket.io)
-      console.log('📤 Sending file message via Supabase...')
-      const msg = await sendMessage(
-        activeChat.id, 
-        user.id, 
-        file.name, 
-        file.type.startsWith('image/') ? 'image' : 'file',
-        { 
-          media_url: mediaData.url, 
-          media_type: file.type, 
-          media_size: file.size
+        // Fallback to REST API if Socket.IO not available
+        if (selectedChat.type === 'dm') {
+          await messagesAPI.sendMessage(selectedChat.id, content, 'text')
+        } else if (selectedChat.type === 'group') {
+          await groupsAPI.sendGroupMessage(selectedChat.id, content)
         }
-      )
-      
-      // Add message immediately from response (don't wait for Realtime)
-      if (msg && msg.data && msg.data[0]) {
-        const newMsg = msg.data[0]
-        console.log('✅ File message sent, adding to UI immediately:', newMsg)
-        setMessages(prev => {
-          // Avoid duplicates - check if message already exists
-          const exists = prev.some(m => (m.id || m._id) === (newMsg.id || newMsg._id))
-          if (exists) return prev
-          return [...prev, newMsg]
-        })
-      } else {
-        console.log('✅ File message sent, waiting for realtime update...')
+        console.log('Message sent via REST API')
       }
       
-      scrollToBottom()
+      // No need to reload messages - real-time events will handle this
     } catch (error) {
-      console.error('File upload error:', error)
-      setIsUploading(false)
-      setUploadProgress(0)
-      // Remove any loading messages on error
-      setMessages(prev => prev.filter(m => !m.isUploading))
-      alert(`Failed to upload file: ${error.message || 'Unknown error'}`)
+      console.error('Failed to send message:', error)
+    } finally {
+      setSendingMessage(false)
     }
   }
 
-  const toggleUserSelection = (userId) => {
-    setSelectedUsers(prev => 
-      prev.includes(userId) 
-        ? prev.filter(id => id !== userId)
-        : [...prev, userId]
+  if (loading) {
+    return (
+      <div className="fixed top-16 left-0 right-0 bottom-0 flex items-center justify-center bg-gradient-to-br from-slate-50 to-cyan-50 dark:from-slate-900 dark:to-slate-800">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-600 dark:text-slate-300 font-medium">Loading your connections...</p>
+          <p className="text-slate-400 dark:text-slate-500 text-sm mt-2">
+            {connected ? '✓ Connected to server' : '○ Connecting...'}
+          </p>
+        </div>
+      </div>
     )
   }
 
-  const toggleAddSelection = (userId) => {
-    setAddSelectedUsers(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId])
-  }
-
-  const addMembersToRoom = async () => {
-    if (!addSelectedUsers.length || !activeChat) {
-      alert('Select at least one user to add')
-      return
-    }
-
-    try {
-      await addRoomParticipants(activeChat.id, addSelectedUsers)
-
-      // Re-fetch participants for the active chat
-      // Since addRoomParticipants doesn't return the full room, we need to refresh
-      await fetchGroupChats()
-      
-      setShowAddMembers(false)
-      setAddSelectedUsers([])
-      alert('Members added successfully')
-    } catch (err) {
-      console.error('Add members error:', err)
-      alert(err?.response?.data?.message || 'Failed to add members')
-    }
-  }
-
-  const filteredRiders = nearbyRiders.filter(rider =>
-    rider.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  const formatTime = (timestamp) => {
-    if (!timestamp) return 'Just now'
-    
-    const date = new Date(timestamp)
-    // Check if date is valid
-    if (isNaN(date.getTime())) return 'Just now'
-    
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
-
   return (
-    <div className="min-h-screen pt-20 px-4 pb-4">
-      <div className="max-w-7xl mx-auto h-[calc(100vh-7rem)]">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full relative z-0">
+    <div className="fixed top-16 left-0 right-0 bottom-0 bg-white dark:bg-slate-950 flex overflow-hidden">
+      {/* LEFT PANEL - Social & Discovery */}
+      <div className="w-80 border-r border-slate-200 dark:border-slate-800 flex flex-col bg-slate-50 dark:bg-slate-900 h-full">
+        {/* Header */}
+        <div className="p-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="mb-4">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1 flex items-center">
+              <ChatBubbleLeftIcon className="w-6 h-6 mr-2.5 text-cyan-500" />
+              Connections
+            </h2>
+            <p className="text-xs text-slate-600 dark:text-slate-400 ml-8.5">Your riding community</p>
+          </div>
           
-          {/* Sidebar */}
-          <div className="lg:col-span-1 space-y-6 overflow-y-auto h-full">
-            {/* Header */}
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h1 className="text-2xl font-orbitron font-bold text-white">Chat</h1>
-                <button
-                  onClick={() => setShowCreateGroup(true)}
-                  className="p-2 bg-neon-cyan/20 hover:bg-neon-cyan/30 text-neon-cyan rounded-full transition-colors"
-                >
-                  <PlusIcon className="w-5 h-5" />
-                </button>
-              </div>
-              
-              <div className={`flex items-center px-3 py-2 rounded ${
-                connected ? 'bg-green-900/20 text-green-300' : 'bg-red-900/20 text-red-300'
-              }`}>
-                <div className={`w-2 h-2 rounded-full mr-2 ${
-                  connected ? 'bg-green-400' : 'bg-red-400'
-                }`} />
-                <span className="text-sm">
-                  {connected ? `${onlineUsers.length} riders online` : 'Offline'}
-                </span>
-              </div>
-            </motion.div>
+          {/* Search Bar */}
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Find riders, groups, communities..."
+              className="w-full px-4 py-2.5 pl-10 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 outline-none text-sm shadow-sm transition-all"
+            />
+            <MagnifyingGlassIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+          </div>
+        </div>
 
-            {/* Search */}
-            <div className="relative">
-              <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-3 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search riders..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-dark-600 border border-gray-600 rounded text-white focus:border-neon-cyan focus:outline-none"
-              />
-            </div>
+        {/* Tabs */}
+        <div className="grid grid-cols-4 border-b border-slate-200 dark:border-slate-800">
+          <button
+            onClick={() => setActiveTab('friends')}
+            className={`py-3 text-xs font-medium transition-colors ${
+              activeTab === 'friends'
+                ? 'text-cyan-600 dark:text-cyan-400 border-b-2 border-cyan-500'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <UserCircleIcon className="w-4 h-4 inline mr-1" />
+            Friends
+          </button>
+          <button
+            onClick={() => setActiveTab('groups')}
+            className={`py-3 text-xs font-medium transition-colors ${
+              activeTab === 'groups'
+                ? 'text-cyan-600 dark:text-cyan-400 border-b-2 border-cyan-500'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <UserGroupIcon className="w-4 h-4 inline mr-1" />
+            Groups
+          </button>
+          <button
+            onClick={() => setActiveTab('communities')}
+            className={`py-3 text-xs font-medium transition-colors ${
+              activeTab === 'communities'
+                ? 'text-cyan-600 dark:text-cyan-400 border-b-2 border-cyan-500'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <UsersIcon className="w-4 h-4 inline mr-1" />
+            Comm
+          </button>
+          <button
+            onClick={() => setActiveTab('nearby')}
+            className={`py-3 text-xs font-medium transition-colors ${
+              activeTab === 'nearby'
+                ? 'text-cyan-600 dark:text-cyan-400 border-b-2 border-cyan-500'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <MapPinIcon className="w-4 h-4 inline mr-1" />
+            Nearby
+          </button>
+        </div>
 
-            {/* Group Chats */}
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              <h2 className="text-lg font-semibold text-white mb-3">Group Chats</h2>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {groupChats.map((group) => (
-                  <button
-                    key={group.id}
-                    onClick={() => setActiveChat({
-                      id: group.id,
-                      name: group.name,
-                      type: 'group',
-                      participants: group.participants
-                    })}
-                    className={`w-full text-left p-3 rounded transition-colors ${
-                      activeChat?.id === group.id 
-                        ? 'bg-neon-cyan/20 border border-neon-cyan/30' 
-                        : 'bg-dark-600 hover:bg-dark-500'
+        {/* Content List */}
+        <div className="flex-1 overflow-y-auto">
+          <AnimatePresence mode="wait">
+            {/* Friends Tab */}
+            {activeTab === 'friends' && (
+              <motion.div
+                key="friends"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="p-3 space-y-3"
+              >
+                {/* Friend Requests */}
+                {friendRequests.length > 0 && (
+                  <div className="mb-4">
+                    <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 px-1">
+                      Pending Requests · {friendRequests.length}
+                    </h3>
+                    {friendRequests.map(request => (
+                      <motion.div
+                        key={request.id}
+                        initial={{ scale: 0.95, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="p-3.5 bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 rounded-xl border border-cyan-200 dark:border-cyan-800/50 mb-2 shadow-sm"
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <h4 className="font-semibold text-slate-900 dark:text-white text-sm mb-0.5">{request.name}</h4>
+                            <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">{request.bike}</p>
+                            <p className="text-xs text-cyan-600 dark:text-cyan-400 font-medium">{request.mutualFriends} mutual connections</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => acceptFriendRequest(request.id)}
+                            className="flex-1 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-xs font-medium transition-colors"
+                          >
+                            <CheckIcon className="w-3 h-3 inline mr-1" />
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => rejectFriendRequest(request.id)}
+                            className="flex-1 px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium transition-colors"
+                          >
+                            <XMarkIcon className="w-3 h-3 inline mr-1" />
+                            Decline
+                          </button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Friends List */}
+                <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 px-1">
+                  Friends · {friends.length}
+                </h3>
+                {friends.length === 0 ? (
+                  <div className="text-center py-12 px-4">
+                    <UserCircleIcon className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600 mb-3" />
+                    <p className="text-slate-500 dark:text-slate-400 text-sm">No friends yet</p>
+                    <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">Start connecting with riders!</p>
+                  </div>
+                ) : (
+                  friends.map(friend => (
+                  <motion.div
+                    key={friend._id}
+                    whileHover={{ scale: 1.01, x: 2 }}
+                    onClick={() => handleOpenChat('dm', friend)}
+                    className={`p-3.5 rounded-xl cursor-pointer transition-all ${
+                      selectedChat?.id === friend._id
+                        ? 'bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-900/30 dark:to-blue-900/30 ring-2 ring-cyan-500/50 shadow-md'
+                        : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 shadow-sm hover:shadow-md'
                     }`}
                   >
                     <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-neon-purple to-neon-cyan rounded-full flex items-center justify-center">
-                        <UserGroupIcon className="w-5 h-5 text-white" />
+                      <div className="relative">
+                        <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white font-bold">
+                          {friend.name?.charAt(0) || 'R'}
+                        </div>
+                        {friend.isOnline && (
+                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-white dark:border-slate-800 rounded-full"></div>
+                        )}
                       </div>
-                      <div>
-                        <h3 className="text-white font-medium">{group.name}</h3>
-                        <p className="text-xs text-gray-400">
-                          {group.participants.length} members
-                        </p>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-slate-900 dark:text-white text-sm truncate mb-0.5">{friend.name || 'Rider'}</h4>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 truncate">{friend.bike?.model || 'Rider'}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5">{friend.city || 'Unknown'}</p>
+                      </div>
+                      {friend.isOnline && (
+                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                      )}
+                    </div>
+                  </motion.div>
+                  ))
+                )}
+              </motion.div>
+            )}
+
+            {/* Communities Tab */}
+            {activeTab === 'communities' && (
+              <motion.div
+                key="communities"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="p-3 space-y-3"
+              >
+                <button className="w-full p-3.5 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-xl font-semibold text-sm transition-all flex items-center justify-center shadow-lg shadow-purple-500/30 hover:shadow-purple-500/40">
+                  <PlusCircleIcon className="w-5 h-5 mr-2" />
+                  Create Community
+                </button>
+
+                <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 px-1">
+                  Communities · {communities.length}
+                </h3>
+                {communities.map(community => (
+                  <motion.div
+                    key={community.id}
+                    whileHover={{ scale: 1.01, x: 2 }}
+                    onClick={() => {
+                      setSelectedChat({ type: 'community', id: community.id, data: community })
+                      setViewMode('feed')
+                    }}
+                    className={`p-3.5 rounded-xl cursor-pointer transition-all ${
+                      selectedChat?.id === community.id
+                        ? 'bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/30 dark:to-pink-900/30 ring-2 ring-purple-500/50 shadow-md'
+                        : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 shadow-sm hover:shadow-md'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-500 rounded-lg flex items-center justify-center text-2xl">
+                        {community.avatar}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center space-x-1.5 mb-0.5">
+                          <h4 className="font-semibold text-slate-900 dark:text-white text-sm truncate">{community.name}</h4>
+                          {community.verified && (
+                            <ShieldCheckIcon className="w-4 h-4 text-cyan-500 flex-shrink-0" />
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">{community.members.toLocaleString()} members</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-500 capitalize mt-0.5">{community.type}</p>
                       </div>
                     </div>
-                  </button>
+                  </motion.div>
                 ))}
-              </div>
-            </motion.div>
+              </motion.div>
+            )}
 
-            {/* Nearby Riders */}
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.2 }}
-            >
-              <h2 className="text-lg font-semibold text-white mb-3">Nearby Riders</h2>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {filteredRiders.map((rider) => (
-                  <button
-                    key={rider._id || rider.id}
-                    onClick={() => startPrivateChat(rider._id || rider.id)}
-                    className="w-full text-left p-3 bg-dark-600 hover:bg-dark-500 rounded transition-colors"
+            {/* Groups Tab */}
+            {activeTab === 'groups' && (
+              <motion.div
+                key="groups"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="p-3 space-y-3"
+              >
+                <button
+                  onClick={() => setShowGroupModal(true)}
+                  className="w-full p-3.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white rounded-xl font-semibold text-sm transition-all flex items-center justify-center shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/40"
+                >
+                  <PlusCircleIcon className="w-5 h-5 mr-2" />
+                  Create Group
+                </button>
+
+                <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 px-1">
+                  Your Groups · {groups.length}
+                </h3>
+                {groups.map(group => (
+                  <motion.div
+                    key={group.id}
+                    whileHover={{ scale: 1.01, x: 2 }}
+                    onClick={() => setSelectedChat({ type: 'group', id: group.id, data: group })}
+                    className={`p-3.5 rounded-xl cursor-pointer transition-all ${
+                      selectedChat?.id === group.id
+                        ? 'bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-900/30 dark:to-blue-900/30 ring-2 ring-cyan-500/50 shadow-md'
+                        : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 shadow-sm hover:shadow-md'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-500 rounded-lg flex items-center justify-center text-white font-bold">
+                        {group.name.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center space-x-2 mb-0.5">
+                          <h4 className="font-semibold text-slate-900 dark:text-white text-sm truncate">{group.name}</h4>
+                          {group.type === 'private' && (
+                            <span className="text-xs px-2 py-0.5 bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-400 rounded-full font-medium">
+                              Private
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 truncate mb-1">{group.lastMessage}</p>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs text-slate-500 dark:text-slate-500">{group.members} members</span>
+                          {group.unread > 0 && (
+                            <>
+                              <span className="text-slate-400">•</span>
+                              <span className="text-xs px-1.5 py-0.5 bg-cyan-500 text-white rounded-full">
+                                {group.unread}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
+
+            {/* Nearby Riders Tab */}
+            {activeTab === 'nearby' && (
+              <motion.div
+                key="nearby"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="p-3 space-y-3"
+              >
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <p className="text-xs text-blue-700 dark:text-blue-300 flex items-center">
+                    <MapPinIcon className="w-4 h-4 mr-1" />
+                    Riders within 5 km radius
+                  </p>
+                </div>
+
+                <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 px-1">
+                  Nearby Riders · {nearbyRiders.length}
+                </h3>
+                {nearbyRiders.map(rider => (
+                  <motion.div
+                    key={rider.id}
+                    whileHover={{ scale: 1.01, x: 2 }}
+                    className="p-3.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-xl cursor-pointer transition-all shadow-sm hover:shadow-md"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
                         <div className="relative">
-                          <div className="w-10 h-10 bg-gradient-to-br from-neon-cyan to-neon-purple rounded-full flex items-center justify-center">
-                            <span className="text-white font-bold">
-                              {rider.name.charAt(0).toUpperCase()}
-                            </span>
+                          <div className="w-10 h-10 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center text-white font-bold">
+                            {rider.name.charAt(0)}
                           </div>
-                          {/* Online indicator (green) or offline (gray) */}
-                          {onlineUsers.some(u => u.userId === (rider._id || rider.id)) ? (
-                            <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-dark-800" />
-                          ) : (
-                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-gray-500 rounded-full border-2 border-dark-800" />
+                          {rider.online && (
+                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-white dark:border-slate-800 rounded-full"></div>
                           )}
                         </div>
                         <div>
-                          <h3 className="text-white font-medium">{rider.name}</h3>
-                          <div className="flex items-center space-x-1 text-xs text-gray-400">
-                            <MapPinIcon className="w-3 h-3" />
-                            <span>{Math.round(rider.distance)}m away</span>
-                          </div>
+                          <h4 className="font-semibold text-slate-900 dark:text-white text-sm mb-0.5">{rider.name}</h4>
+                          <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">{rider.bike}</p>
+                          <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">{rider.distance} away</p>
                         </div>
                       </div>
+                      <button 
+                        onClick={() => sendFriendRequest(rider._id)}
+                        className="p-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors"
+                      >
+                        <UserPlusIcon className="w-4 h-4" />
+                      </button>
                     </div>
-                  </button>
+                  </motion.div>
                 ))}
-              </div>
-            </motion.div>
-          </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
 
-          {/* Chat Area */}
-          <div className="lg:col-span-3 h-full overflow-hidden">
-            {activeChat ? (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="h-full flex flex-col card-glow overflow-hidden"
-              >
-                {/* Chat Header */}
-                <div className="flex items-center justify-between p-4 border-b border-gray-700">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-neon-purple to-neon-cyan rounded-full flex items-center justify-center">
-                      {activeChat.type === 'group' ? (
-                        <UserGroupIcon className="w-5 h-5 text-white" />
-                      ) : (
-                        <span className="text-white font-bold">
-                          {activeChat.name.charAt(0).toUpperCase()}
-                        </span>
-                      )}
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-semibold text-white">{activeChat.name}</h2>
-                      <p className="text-sm text-gray-400">
-                        {activeChat.type === 'group' 
-                          ? `${activeChat.participants.length} members`
-                          : 'Private chat'
-                        }
+      {/* CENTER PANEL - Main Interaction Area */}
+      <div className="flex-1 flex flex-col bg-white dark:bg-slate-950 h-full overflow-hidden">
+        {selectedChat ? (
+          <>
+            {/* Chat/Feed Header */}
+            <div className="h-16 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-6 bg-white dark:bg-slate-900 shadow-sm">
+              <div className="flex items-center space-x-4">
+                <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                  {selectedChat.type === 'community' ? selectedChat.data.avatar : selectedChat.data.name.charAt(0)}
+                </div>
+                <div className="flex flex-col justify-center">
+                  <div className="flex items-center space-x-2">
+                    <h3 className="font-semibold text-slate-900 dark:text-white leading-tight">{selectedChat.data.name}</h3>
+                    {selectedChat.data.verified && (
+                      <ShieldCheckIcon className="w-4 h-4 text-cyan-500" />
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-tight">
+                    {selectedChat.type === 'community' 
+                      ? `${selectedChat.data.members.toLocaleString()} members`
+                      : selectedChat.data.online ? 'Online' : 'Offline'
+                    }
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                {selectedChat.type === 'community' && (
+                  <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+                    <button
+                      onClick={() => setViewMode('chat')}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        viewMode === 'chat'
+                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                          : 'text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      <ChatBubbleLeftIcon className="w-3 h-3 inline mr-1" />
+                      Chat
+                    </button>
+                    <button
+                      onClick={() => setViewMode('feed')}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        viewMode === 'feed'
+                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                          : 'text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      <Squares2X2Icon className="w-3 h-3 inline mr-1" />
+                      Feed
+                    </button>
+                  </div>
+                )}
+                <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                  <VideoCameraIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                </button>
+                <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                  <EllipsisVerticalIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                </button>
+              </div>
+            </div>
+
+            {/* Main Content Area */}
+            <div className="flex-1 overflow-y-auto">
+              {viewMode === 'chat' ? (
+                /* Direct Messages View */
+                <div className="p-6 space-y-4">
+                  {messages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full py-20">
+                      <div className="w-20 h-20 bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 rounded-2xl flex items-center justify-center mb-4 shadow-inner">
+                        <ChatBubbleOvalLeftEllipsisIcon className="w-10 h-10 text-slate-400 dark:text-slate-500" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">Start the conversation</h3>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 text-center max-w-sm leading-relaxed">
+                        Say hello to {selectedChat.data.name} and share your riding stories
                       </p>
                     </div>
-                  </div>
-                  
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={startVoiceCall}
-                      className="p-2 text-gray-400 hover:text-neon-cyan transition-colors"
-                    >
-                      <PhoneIcon className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => startVideoCall()}
-                      className="p-2 text-gray-400 hover:text-neon-cyan transition-colors"
-                    >
-                      <VideoCameraIcon className="w-5 h-5" />
-                    </button>
-                    <div className="relative group-menu">
-                      <button
-                        onClick={() => setShowGroupMenu(!showGroupMenu)}
-                        className="p-2 text-gray-400 hover:text-neon-cyan transition-colors"
+                  ) : (
+                    messages.map(msg => (
+                      <motion.div
+                        key={msg.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={`flex ${msg.sender.id === user.id ? 'justify-end' : 'justify-start'}`}
                       >
-                        <EllipsisVerticalIcon className="w-5 h-5" />
-                      </button>
-                      
-                      {/* Group Menu Dropdown */}
-                      {showGroupMenu && (
-                        <div className="absolute right-0 top-12 bg-dark-700 rounded-lg shadow-xl border border-gray-600 py-1 min-w-[180px] z-20">
-                          <button
-                            onClick={() => {
-                              setShowGroupMenu(false)
-                              setShowParticipants(true)
-                            }}
-                            className="w-full px-4 py-2 text-left text-sm hover:bg-dark-600 flex items-center gap-2 text-white"
-                          >
-                            <UserGroupIcon className="w-4 h-4" />
-                            View Participants
-                          </button>
-                          
-                          {/* Delete Group - Only for Admin */}
-                          {activeChat.type === 'group' && isUserAdmin() && (
-                            <button
-                              onClick={() => {
-                                setShowGroupMenu(false)
-                                setShowDeleteConfirm(true)
-                              }}
-                              className="w-full px-4 py-2 text-left text-sm hover:bg-dark-600 flex items-center gap-2 text-red-400"
-                            >
-                              <TrashIcon className="w-4 h-4" />
-                              Delete Group
-                            </button>
-                          )}
+                        <div className={`max-w-md rounded-2xl px-4 py-3 shadow-sm ${
+                          msg.sender.id === user.id
+                            ? 'bg-gradient-to-br from-cyan-500 to-blue-500 text-white shadow-cyan-500/20'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white'
+                        }`}>
+                          <p className="text-sm">{msg.content}</p>
+                          <p className={`text-xs mt-1 ${
+                            msg.sender.id === user.id ? 'text-cyan-100' : 'text-slate-500 dark:text-slate-400'
+                          }`}>
+                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                  {messages.map((message, index) => {
-                    const isOwnMessage = (message.sender.id || message.sender._id) === (user.id || user._id)
-                    const messageId = message.id || message._id
-                    
-                    return (
-                    <div
-                      key={messageId || index}
-                      className={`flex ${
-                        isOwnMessage ? 'justify-end' : 'justify-start'
-                      } ${message.sending ? 'opacity-60' : 'opacity-100'} group`}
-                    >
-                      <div className="relative">
-                        <div
-                          className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                            isOwnMessage
-                              ? 'bg-neon-cyan text-dark-800'
-                              : 'bg-dark-600 text-white'
-                          }`}
-                        >
-                          {!isOwnMessage && activeChat.type === 'group' && (
-                            <p className="text-xs text-gray-400 mb-1">{message.sender.name}</p>
-                          )}
-                          
-                          {/* Edit/Delete Menu for own messages */}
-                          {isOwnMessage && !message.isUploading && !message.sending && (
-                            <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity message-menu">
-                              <button
-                                onClick={() => setMessageMenuOpen(messageMenuOpen === messageId ? null : messageId)}
-                                className="bg-dark-700 hover:bg-dark-600 text-white p-1 rounded-full shadow-lg"
-                              >
-                                <EllipsisVerticalIcon className="w-4 h-4" />
-                              </button>
-                              
-                              {messageMenuOpen === messageId && (
-                                <div className="absolute right-0 top-8 bg-dark-700 rounded-lg shadow-xl border border-gray-600 py-1 min-w-[120px] z-10">
-                                  {/* Only show Edit for text messages */}
-                                  {message.type === 'text' && (
-                                    <button
-                                      onClick={() => {
-                                        setEditingMessageId(messageId)
-                                        setEditedContent(message.content)
-                                        setMessageMenuOpen(null)
-                                      }}
-                                      className="w-full px-3 py-2 text-left text-sm hover:bg-dark-600 flex items-center gap-2 text-white"
-                                    >
-                                      <PencilIcon className="w-4 h-4" />
-                                      Edit
-                                    </button>
-                                  )}
-                                  {/* Show Delete for all message types */}
-                                  <button
-                                    onClick={() => handleDeleteMessage(messageId)}
-                                    className="w-full px-3 py-2 text-left text-sm hover:bg-dark-600 flex items-center gap-2 text-red-400"
-                                  >
-                                    <TrashIcon className="w-4 h-4" />
-                                    Delete
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          
-                          {message.isUploading ? (
-                            <div className="space-y-2 min-w-[200px]">
-                              <p className="text-sm">{message.content}</p>
-                              <div className="w-full bg-dark-800 rounded-full h-2.5 overflow-hidden">
-                                <div 
-                                  className="bg-neon-cyan h-2.5 rounded-full transition-all duration-300 ease-out"
-                                  style={{ width: `${uploadProgress}%` }}
-                                ></div>
-                              </div>
-                            </div>
-                          ) : editingMessageId === messageId ? (
-                            <div className="space-y-2 min-w-[200px]">
-                              <input
-                                type="text"
-                                value={editedContent}
-                                onChange={(e) => setEditedContent(e.target.value)}
-                                className="w-full px-2 py-1 bg-dark-800 border border-gray-600 rounded text-white text-sm focus:outline-none focus:border-neon-cyan"
-                                autoFocus
-                              />
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleEditMessage(messageId, editedContent)}
-                                  className="flex items-center gap-1 px-2 py-1 bg-neon-cyan text-dark-800 rounded text-xs hover:bg-opacity-80"
-                                >
-                                  <CheckIcon className="w-3 h-3" />
-                                  Save
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setEditingMessageId(null)
-                                    setEditedContent('')
-                                  }}
-                                  className="flex items-center gap-1 px-2 py-1 bg-dark-600 text-white rounded text-xs hover:bg-dark-500"
-                                >
-                                  <XMarkIcon className="w-3 h-3" />
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          ) : message.type === 'text' ? (
-                            <div>
-                              <p className="text-sm">{message.content}</p>
-                              {message.edited_at && (
-                                <p className="text-xs opacity-50 mt-1">(edited)</p>
-                              )}
-                            </div>
-                          ) : null}
-                          
-                          {!message.isUploading && message.type === 'image' && (
-                            <div>
-                              <img 
-                                src={message.media_url || message.media?.url || message.fileUrl} 
-                                alt="Shared image" 
-                                className="max-w-full max-h-80 rounded cursor-pointer"
-                                onClick={() => window.open(message.media_url || message.media?.url || message.fileUrl, '_blank')}
-                              />
-                            </div>
-                          )}
-                          
-                          {!message.isUploading && message.type === 'file' && (
-                            <a 
-                              href={message.media_url || message.media?.url || message.fileUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center space-x-2 hover:underline"
-                            >
-                              <PhotoIcon className="w-4 h-4" />
-                              <span className="text-sm">{message.content || 'Download file'}</span>
-                            </a>
-                          )}
-                          
-                          {!message.isUploading && message.type === 'location' && (
-                            <div className="flex items-center space-x-2">
-                              <MapPinIcon className="w-4 h-4" />
-                              <span className="text-sm">Location shared</span>
-                            </div>
-                          )}
-                          
-                          {!message.isUploading && message.type === 'voice' && (
-                            <div className="flex items-center space-x-3 min-w-[200px]">
-                              <button
-                                onClick={() => toggleAudioPlayback(messageId, message.media_url || message.media?.url)}
-                                className={`p-2 rounded-full transition-colors ${
-                                  isOwnMessage 
-                                    ? 'bg-dark-800 hover:bg-dark-700' 
-                                    : 'bg-dark-700 hover:bg-dark-600'
-                                }`}
-                              >
-                                {playingAudioId === messageId ? (
-                                  <PauseIcon className="w-5 h-5" />
-                                ) : (
-                                  <PlayIcon className="w-5 h-5" />
-                                )}
-                              </button>
-                              <div className="flex-1 flex items-center gap-2">
-                                <div className="flex-1 h-1 bg-dark-800 rounded-full overflow-hidden">
-                                  <div className="h-full bg-neon-cyan rounded-full" style={{ width: '0%' }}></div>
-                                </div>
-                                <span className="text-xs whitespace-nowrap">
-                                  {message.voice_duration ? formatDuration(message.voice_duration) : '0:00'}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                          
-                          {!message.isUploading && editingMessageId !== messageId && (
-                            <p className="text-xs opacity-75 mt-1 flex items-center gap-1">
-                              {message.sending && <span className="animate-pulse">●</span>}
-                              {formatTime(message.timestamp)}
-                              {message.sending && <span className="text-[10px]">sending...</span>}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )})}
+                      </motion.div>
+                    ))
+                  )}
                   <div ref={messagesEndRef} />
                 </div>
+              ) : (
+                /* Community Feed View */
+                <div className="p-6 max-w-4xl mx-auto">
+                  {/* New Post Button */}
+                  <motion.button
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                    onClick={() => setShowNewPost(!showNewPost)}
+                    className="w-full p-4 mb-6 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white rounded-xl font-semibold transition-all flex items-center justify-center shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/40"
+                  >
+                    <PlusCircleIcon className="w-5 h-5 mr-2" />
+                    Share Your Story
+                  </motion.button>
 
-                {/* Message Input */}
-                <div className="p-4 border-t border-gray-700">
-                  {/* Voice Recording Preview */}
-                  {audioBlob && (
-                    <div className="mb-3 p-3 bg-dark-700 rounded-lg flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-neon-cyan flex items-center justify-center">
-                          <MicrophoneIcon className="w-5 h-5 text-dark-800" />
-                        </div>
-                        <div>
-                          <p className="text-sm text-white">Voice Message</p>
-                          <p className="text-xs text-gray-400">{formatDuration(recordingTime)}</p>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={cancelVoiceRecording}
-                          className="p-2 text-gray-400 hover:text-red-400 transition-colors"
-                        >
-                          <XMarkIcon className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={sendVoiceMessage}
-                          className="px-4 py-2 bg-neon-cyan text-dark-800 rounded-lg hover:bg-opacity-80 transition-colors"
-                        >
-                          Send
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Recording In Progress */}
-                  {isRecordingVoice && (
-                    <div className="mb-3 p-3 bg-red-900/20 border border-red-500/30 rounded-lg flex items-center justify-between animate-pulse">
-                      <div className="flex items-center gap-3">
-                        <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse"></div>
-                        <span className="text-white">Recording... {formatDuration(recordingTime)}</span>
-                      </div>
-                      <button
-                        onClick={stopVoiceRecording}
-                        className="p-2 bg-red-500 hover:bg-red-600 text-white rounded-full transition-colors"
+                  {/* New Post Form */}
+                  <AnimatePresence>
+                    {showNewPost && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mb-6 bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800"
                       >
-                        <StopIcon className="w-5 h-5" />
-                      </button>
-                    </div>
-                  )}
-                  
-                  <div className="flex items-center space-x-2">
-                    {!isRecordingVoice && !audioBlob && (
-                      <>
-                        <button
-                          onClick={() => fileInputRef.current?.click()}
-                          className="p-2 text-gray-400 hover:text-neon-cyan transition-colors"
-                        >
-                          <PhotoIcon className="w-5 h-5" />
-                        </button>
-                        
-                        <button
-                          onClick={startVoiceRecording}
-                          className="p-2 text-gray-400 hover:text-neon-cyan transition-colors"
-                        >
-                          <MicrophoneIcon className="w-5 h-5" />
-                        </button>
-                        
-                        <input
-                          type="text"
-                          value={newMessage}
-                          onChange={(e) => setNewMessage(e.target.value)}
-                          onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                          placeholder="Type a message..."
-                          className="flex-1 px-4 py-2 bg-dark-600 border border-gray-600 rounded text-white focus:border-neon-cyan focus:outline-none"
+                        <textarea
+                          value={postInput}
+                          onChange={(e) => setPostInput(e.target.value)}
+                          placeholder="Share your experience, route tips, or ask the community..."
+                          className="w-full p-3 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-cyan-500 outline-none resize-none"
+                          rows="4"
                         />
-                      </>
+                        <div className="flex items-center justify-between mt-3">
+                          <div className="flex space-x-2">
+                            <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                              <PhotoIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                            </button>
+                            <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                              <LinkIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                            </button>
+                            <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                              <MapPinIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                            </button>
+                          </div>
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => setShowNewPost(false)}
+                              className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-sm font-medium"
+                            >
+                              Cancel
+                            </button>
+                            <button className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors text-sm font-medium">
+                              Post
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
                     )}
-                    
-                    {(isRecordingVoice || audioBlob) && (
-                      <div className="flex-1"></div>
-                    )}
-                    
-                    {!isRecordingVoice && !audioBlob && (
-                      <button
-                        onClick={handleSendMessage}
-                        disabled={!newMessage.trim()}
-                        className="p-2 bg-neon-cyan text-dark-800 rounded hover:bg-neon-cyan/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  </AnimatePresence>
+
+                  {/* Posts Feed */}
+                  <div className="space-y-4">
+                    {posts.map(post => (
+                      <motion.div
+                        key={post.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden hover:border-cyan-500 dark:hover:border-cyan-500 transition-all"
                       >
-                        <PaperAirplaneIcon className="w-5 h-5" />
-                      </button>
-                    )}
+                        {/* Post Header */}
+                        <div className="p-4 flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white font-bold">
+                              {post.author.name.charAt(0)}
+                            </div>
+                            <div>
+                              <div className="flex items-center space-x-1">
+                                <h4 className="font-medium text-slate-900 dark:text-white text-sm">{post.author.name}</h4>
+                                {post.author.verified && (
+                                  <ShieldCheckIcon className="w-4 h-4 text-cyan-500" />
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-600 dark:text-slate-400">{post.timestamp} • {post.community}</p>
+                            </div>
+                          </div>
+                          {post.isPinned && (
+                            <div className="flex items-center space-x-1 px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded text-xs font-medium">
+                              <StarIcon className="w-3 h-3" />
+                              <span>Pinned</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Post Content */}
+                        <div className="px-4 pb-4">
+                          <h3 className="font-semibold text-slate-900 dark:text-white mb-2">{post.title}</h3>
+                          <p className="text-slate-700 dark:text-slate-300 text-sm mb-3">{post.content}</p>
+                          
+                          {post.media && (
+                            <div className="rounded-lg overflow-hidden mb-3">
+                              <img src={post.media.url} alt="" className="w-full h-64 object-cover" />
+                            </div>
+                          )}
+
+                          {/* Tags */}
+                          <div className="flex flex-wrap gap-2 mb-3">
+                            {post.tags.map(tag => (
+                              <span key={tag} className="px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded text-xs">
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Post Actions */}
+                        <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between border-t border-slate-200 dark:border-slate-800">
+                          <div className="flex items-center space-x-4">
+                            <button
+                              onClick={() => handleUpvote(post.id)}
+                              className="flex items-center space-x-1 text-slate-600 dark:text-slate-400 hover:text-cyan-500 transition-colors"
+                            >
+                              <ArrowUpIcon className="w-5 h-5" />
+                              <span className="text-sm font-medium">{post.upvotes}</span>
+                            </button>
+                            <button
+                              onClick={() => handleDownvote(post.id)}
+                              className="flex items-center space-x-1 text-slate-600 dark:text-slate-400 hover:text-red-500 transition-colors"
+                            >
+                              <ArrowDownIcon className="w-5 h-5" />
+                            </button>
+                            <button
+                              onClick={() => setSelectedPost(post)}
+                              className="flex items-center space-x-1 text-slate-600 dark:text-slate-400 hover:text-cyan-500 transition-colors"
+                            >
+                              <ChatBubbleOvalLeftEllipsisIcon className="w-5 h-5" />
+                              <span className="text-sm font-medium">{post.comments}</span>
+                            </button>
+                          </div>
+                          <button className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors">
+                            <FlagIcon className="w-4 h-4 text-slate-400" />
+                          </button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Message Input (for DM mode) */}
+            {viewMode === 'chat' && (
+              <div className="border-t border-slate-200 dark:border-slate-800 p-4 bg-white dark:bg-slate-900">
+                <div className="flex items-center space-x-3">
+                  <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                    <PhotoIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                  </button>
+                  <input
+                    type="text"
+                    value={messageInput}
+                    onChange={(e) => setMessageInput(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                    placeholder="Type a message..."
+                    className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none"
+                  />
+                  <button
+                    onClick={handleSendMessage}
+                    className="p-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors"
+                  >
+                    <PaperAirplaneIcon className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          /* Empty State */
+          <div className="flex-1 flex flex-col items-center justify-center p-8">
+            <div className="w-28 h-28 bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-500 rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-cyan-500/30">
+              <UserGroupIcon className="w-14 h-14 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Your Riding Community</h2>
+            <p className="text-slate-600 dark:text-slate-400 text-center max-w-md mb-8 leading-relaxed">
+              Connect with riders, share experiences, and discover new routes together
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setActiveTab('friends')}
+                className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white rounded-xl font-semibold transition-all shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/40"
+              >
+                Find Riders
+              </button>
+              <button
+                onClick={() => setActiveTab('communities')}
+                className="px-6 py-3 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-xl font-semibold transition-all shadow-sm hover:shadow-md"
+              >
+                Explore Communities
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* RIGHT PANEL - Context & Intelligence */}
+      <div className="w-80 border-l border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 overflow-y-auto h-full">
+        {selectedChat ? (
+          <div className="p-4">
+            {selectedChat.type === 'dm' ? (
+              /* Rider Profile Preview */
+              <div>
+                <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-4">
+                  Profile
+                </h3>
+                <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-800/50 rounded-2xl p-5 mb-4 border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <div className="flex flex-col items-center mb-5">
+                    <div className="w-24 h-24 bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold text-3xl mb-3 shadow-lg shadow-cyan-500/30">
+                      {selectedChat.data.name.charAt(0)}
+                    </div>
+                    <h4 className="font-bold text-slate-900 dark:text-white text-lg mb-1">{selectedChat.data.name}</h4>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">{selectedChat.data.city}</p>
+                  </div>
+                  
+                  <div className="space-y-3 mb-5">
+                    <div className="flex items-center space-x-3 text-sm p-2.5 rounded-lg bg-slate-50 dark:bg-slate-700/50">
+                      <GlobeAltIcon className="w-4 h-4 text-cyan-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300 font-medium">{selectedChat.data.bike}</span>
+                    </div>
+                    <div className="flex items-center space-x-3 text-sm p-2.5 rounded-lg bg-slate-50 dark:bg-slate-700/50">
+                      <MapPinIcon className="w-4 h-4 text-cyan-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300 font-medium">{selectedChat.data.city}</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-200 dark:border-slate-700/50 space-y-2">
+                    <button className="w-full px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white rounded-xl text-sm font-semibold transition-all shadow-md shadow-cyan-500/20 hover:shadow-cyan-500/30">
+                      View Profile
+                    </button>
+                    <button className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-600/50 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-medium transition-all">
+                      Block
+                    </button>
                   </div>
                 </div>
 
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </motion.div>
+                {/* Shared Communities */}
+                <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-800/50 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Shared Communities</h4>
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2 text-xs">
+                      <div className="w-6 h-6 bg-gradient-to-br from-purple-400 to-pink-500 rounded flex items-center justify-center">🏍️</div>
+                      <span className="text-slate-700 dark:text-slate-300">Delhi Riders Club</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : (
-              <div className="h-full flex items-center justify-center card-glow">
-                <div className="text-center">
-                  <ChatBubbleLeftIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                  <h2 className="text-xl font-semibold text-white mb-2">
-                    Select a chat to start messaging
-                  </h2>
-                  <p className="text-gray-400">
-                    Choose from nearby riders or create a group chat
-                  </p>
+              /* Community Info */
+              <div>
+                <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-4">
+                  Community Info
+                </h3>
+                
+                <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-800/50 rounded-2xl p-5 mb-4 border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-pink-500 rounded-lg flex items-center justify-center text-3xl">
+                      {selectedChat.data.avatar}
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-slate-900 dark:text-white">{selectedChat.data.name}</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-400">{selectedChat.data.members.toLocaleString()} members</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 mb-4">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-600 dark:text-slate-400">Type</span>
+                      <span className="text-slate-900 dark:text-white capitalize">{selectedChat.data.type}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-600 dark:text-slate-400">Verified</span>
+                      <span className="text-slate-900 dark:text-white">{selectedChat.data.verified ? 'Yes' : 'No'}</span>
+                    </div>
+                  </div>
+
+                  <button className="w-full px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-semibold transition-all shadow-md shadow-red-500/20 hover:shadow-red-500/30">
+                    Leave Community
+                  </button>
+                </div>
+
+                {/* Community Rules */}
+                <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-800/50 rounded-2xl p-5 mb-4 border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Community Rules</h4>
+                  <ul className="space-y-2 text-xs text-slate-700 dark:text-slate-300">
+                    <li className="flex items-start">
+                      <span className="text-cyan-500 mr-2">•</span>
+                      Be respectful to all members
+                    </li>
+                    <li className="flex items-start">
+                      <span className="text-cyan-500 mr-2">•</span>
+                      No spam or self-promotion
+                    </li>
+                    <li className="flex items-start">
+                      <span className="text-cyan-500 mr-2">•</span>
+                      Share accurate safety information
+                    </li>
+                    <li className="flex items-start">
+                      <span className="text-cyan-500 mr-2">•</span>
+                      Keep posts relevant to riding
+                    </li>
+                  </ul>
+                </div>
+
+                {/* Trending Posts */}
+                <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-800/50 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
+                    <BoltIcon className="w-4 h-4 mr-1 text-amber-500" />
+                    Trending
+                  </h4>
+                  <div className="space-y-3">
+                    <div className="pb-2 border-b border-slate-200 dark:border-slate-700 last:border-0">
+                      <p className="text-xs font-medium text-slate-900 dark:text-white mb-1">Best monsoon gear?</p>
+                      <p className="text-xs text-slate-600 dark:text-slate-400">45 upvotes</p>
+                    </div>
+                    <div className="pb-2 border-b border-slate-200 dark:border-slate-700 last:border-0">
+                      <p className="text-xs font-medium text-slate-900 dark:text-white mb-1">Road closure update - NH44</p>
+                      <p className="text-xs text-slate-600 dark:text-slate-400">38 upvotes</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
           </div>
-        </div>
+        ) : (
+          /* AI Assistant Placeholder */
+          <div className="p-6">
+            <div className="bg-gradient-to-br from-cyan-500 via-blue-500 to-purple-600 rounded-2xl p-8 text-white text-center shadow-xl shadow-cyan-500/30">
+              <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <BoltIcon className="w-8 h-8" />
+              </div>
+              <h3 className="font-bold text-lg mb-2">AI Insights</h3>
+              <p className="text-sm text-white/90 leading-relaxed">
+                Select a conversation to get intelligent summaries and community insights
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
 
-        {/* Create Group Modal */}
-        {showCreateGroup && (
+      {/* Group Creation Modal */}
+      <AnimatePresence>
+        {showGroupModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowGroupModal(false)}
           >
             <motion.div
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              className="bg-dark-800 rounded-lg p-6 w-full max-w-md"
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full max-h-[90vh] overflow-hidden"
             >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold text-white">Create Group Chat</h3>
+              {/* Modal Header */}
+              <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Create Group</h3>
                 <button
-                  onClick={() => setShowCreateGroup(false)}
-                  className="text-gray-400 hover:text-white"
+                  onClick={() => setShowGroupModal(false)}
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
                 >
-                  <XMarkIcon className="w-6 h-6" />
+                  <XMarkIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
                 </button>
               </div>
-              
-              <div className="space-y-4">
-                <input
-                  type="text"
-                  placeholder="Group name"
-                  value={newGroupName}
-                  onChange={(e) => setNewGroupName(e.target.value)}
-                  className="w-full px-4 py-2 bg-dark-600 border border-gray-600 rounded text-white focus:border-neon-cyan focus:outline-none"
-                />
-                
-                <div>
-                  <h4 className="text-white font-medium mb-2">Select participants:</h4>
-                  <div className="max-h-40 overflow-y-auto space-y-2">
-                    {/* Nearby riders first (if any) */}
-                    {nearbyRiders.map((rider) => (
-                      <label
-                        key={rider._id || rider.id}
-                        className="flex items-center space-x-3 p-2 hover:bg-dark-600 rounded cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedUsers.includes(rider._id || rider.id)}
-                          onChange={() => toggleUserSelection(rider._id || rider.id)}
-                          className="text-neon-cyan"
-                        />
-                        <span className="text-white">{rider.name}</span>
-                      </label>
-                    ))}
 
-                    {/* Fallback: online users (exclude those already shown and exclude self) */}
-                    {onlineUsers
-                      .filter(u => !nearbyRiders.some(r => (r._id || r.id) === u.userId) && u.userId !== (user?.id || user?._id))
-                      .map((u) => (
-                        <label
-                          key={u.userId}
-                          className="flex items-center space-x-3 p-2 hover:bg-dark-600 rounded cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedUsers.includes(u.userId)}
-                            onChange={() => toggleUserSelection(u.userId)}
-                            className="text-neon-cyan"
-                          />
-                          <span className="text-white">{u.name || u.email || u.userId}</span>
-                        </label>
-                      ))}
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+                <div className="space-y-4">
+                  {/* Group Name */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Group Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={groupData.name}
+                      onChange={(e) => setGroupData(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="e.g., Weekend Ride Squad"
+                      className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white"
+                    />
                   </div>
 
-                  {/* Debug / quick-inspect button: prints arrays to console so you can see what's available */}
-                  <div className="mt-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // helpful quick-debug: inspect participant sources in console
-                        // eslint-disable-next-line no-console
-                        console.log('Create Group debug - onlineUsers:', onlineUsers)
-                        // eslint-disable-next-line no-console
-                        console.log('Create Group debug - nearbyRiders:', nearbyRiders)
-                        // eslint-disable-next-line no-console
-                        alert('Printed onlineUsers and nearbyRiders to the console')
-                      }}
-                      className="px-3 py-1 text-xs bg-gray-700 text-gray-200 rounded hover:bg-gray-600"
-                    >
-                      Print participants to console
-                    </button>
+                  {/* Description */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Description
+                    </label>
+                    <textarea
+                      value={groupData.description}
+                      onChange={(e) => setGroupData(prev => ({ ...prev, description: e.target.value }))}
+                      placeholder="What's this group about?"
+                      rows="3"
+                      className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none resize-none text-slate-900 dark:text-white"
+                    />
+                  </div>
+
+                  {/* Group Type */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Group Type
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => setGroupData(prev => ({ ...prev, type: 'private' }))}
+                        className={`p-3 rounded-lg border-2 transition-all ${
+                          groupData.type === 'private'
+                            ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20'
+                            : 'border-slate-300 dark:border-slate-700 hover:border-cyan-300'
+                        }`}
+                      >
+                        <h4 className="font-semibold text-slate-900 dark:text-white text-sm mb-1">Private</h4>
+                        <p className="text-xs text-slate-600 dark:text-slate-400">Only invited members</p>
+                      </button>
+                      <button
+                        onClick={() => setGroupData(prev => ({ ...prev, type: 'public' }))}
+                        className={`p-3 rounded-lg border-2 transition-all ${
+                          groupData.type === 'public'
+                            ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20'
+                            : 'border-slate-300 dark:border-slate-700 hover:border-cyan-300'
+                        }`}
+                      >
+                        <h4 className="font-semibold text-slate-900 dark:text-white text-sm mb-1">Public</h4>
+                        <p className="text-xs text-slate-600 dark:text-slate-400">Anyone can join</p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Optional Tags */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        City (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={groupData.city}
+                        onChange={(e) => setGroupData(prev => ({ ...prev, city: e.target.value }))}
+                        placeholder="Delhi, Mumbai..."
+                        className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Route (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={groupData.route}
+                        onChange={(e) => setGroupData(prev => ({ ...prev, route: e.target.value }))}
+                        placeholder="Leh-Ladakh..."
+                        className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Invite Friends */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Invite Friends (optional)
+                    </label>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {friends.map(friend => (
+                        <button
+                          key={friend.id}
+                          onClick={() => toggleMemberSelection(friend.id)}
+                          className={`w-full p-3 rounded-lg flex items-center justify-between transition-all ${
+                            groupData.selectedMembers.includes(friend.id)
+                              ? 'bg-cyan-50 dark:bg-cyan-900/20 ring-2 ring-cyan-500'
+                              : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                              {friend.name.charAt(0)}
+                            </div>
+                            <span className="text-sm font-medium text-slate-900 dark:text-white">{friend.name}</span>
+                          </div>
+                          {groupData.selectedMembers.includes(friend.id) && (
+                            <CheckIcon className="w-5 h-5 text-cyan-500" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-                
-                <div className="flex space-x-2">
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  {groupData.selectedMembers.length} members selected
+                </p>
+                <div className="flex space-x-3">
                   <button
-                    onClick={createGroupChat}
-                    className="flex-1 px-4 py-2 bg-neon-cyan text-dark-800 rounded hover:bg-neon-cyan/80 transition-colors"
+                    onClick={() => setShowGroupModal(false)}
+                    className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={createGroup}
+                    disabled={!groupData.name.trim()}
+                    className="px-6 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
                   >
                     Create Group
                   </button>
-                  <button
-                    onClick={() => setShowCreateGroup(false)}
-                    className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
-                  >
-                    Cancel
-                  </button>
                 </div>
               </div>
             </motion.div>
           </motion.div>
         )}
-        {/* Participants Modal */}
-        {showParticipants && activeChat && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
-          >
-            <motion.div
-              initial={{ scale: 0.95 }}
-              animate={{ scale: 1 }}
-              className="bg-dark-800 rounded-lg p-6 w-full max-w-sm"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-white">Participants</h3>
-                <button
-                  onClick={() => setShowParticipants(false)}
-                  className="text-gray-400 hover:text-white"
-                >
-                  <XMarkIcon className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Add More Members button for group chats */}
-              {activeChat && activeChat.type === 'group' && (
-                <div className="mb-3">
-                  <button 
-                    onClick={() => {
-                      setShowParticipants(false)
-                      setShowAddMembers(true)
-                    }} 
-                    className="w-full px-4 py-2 bg-neon-cyan text-dark-800 rounded-lg hover:bg-opacity-80 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <PlusIcon className="w-5 h-5" />
-                    Add More Members
-                  </button>
-                </div>
-              )}
-
-              <div className="space-y-3 max-h-72 overflow-y-auto">
-                {activeChat.participants.map((p, idx) => {
-                  const userObj = p.user || p
-                  const id = userObj?._id || userObj?.id || userObj
-                  const displayName = userObj?.name || userObj?.email || id
-                  const role = p.role || 'member'
-                  const isAdmin = role === 'admin'
-                  const isModerator = role === 'moderator'
-                  
-                  return (
-                    <div key={id || idx} className="flex items-center justify-between p-2 rounded hover:bg-dark-700">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-neon-cyan to-neon-purple rounded-full flex items-center justify-center text-white font-bold">
-                          {(displayName || '').charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-white">{displayName}</span>
-                            {isAdmin && (
-                              <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs rounded-full border border-yellow-500/30">
-                                Admin
-                              </span>
-                            )}
-                            {isModerator && (
-                              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs rounded-full border border-blue-500/30">
-                                Moderator
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-400">{id?.toString?.()}</div>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-
-        {/* Add Members Modal */}
-        {showAddMembers && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="bg-dark-800 rounded-lg p-6 w-full max-w-md">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold text-white">Add Members to "{activeChat?.name}"</h3>
-                <button onClick={() => setShowAddMembers(false)} className="text-gray-400 hover:text-white"><XMarkIcon className="w-5 h-5"/></button>
-              </div>
-
-              <div className="space-y-3 max-h-56 overflow-y-auto">
-                {nearbyRiders.map(r => (
-                  <label key={r._id || r.id} className="flex items-center space-x-3 p-2 hover:bg-dark-700 rounded cursor-pointer">
-                    <input type="checkbox" checked={addSelectedUsers.includes(r._id || r.id)} onChange={() => toggleAddSelection(r._id || r.id)} />
-                    <span className="text-white">{r.name}</span>
-                  </label>
-                ))}
-
-                {onlineUsers.filter(u => !nearbyRiders.some(r => (r._id || r.id) === u.userId)).map(u => (
-                  <label key={u.userId} className="flex items-center space-x-3 p-2 hover:bg-dark-700 rounded cursor-pointer">
-                    <input type="checkbox" checked={addSelectedUsers.includes(u.userId)} onChange={() => toggleAddSelection(u.userId)} />
-                    <span className="text-white">{u.name || u.email || u.userId}</span>
-                  </label>
-                ))}
-              </div>
-
-              <div className="mt-4 flex space-x-2">
-                <button onClick={addMembersToRoom} className="flex-1 px-4 py-2 bg-neon-cyan text-dark-800 rounded">Add Selected</button>
-                <button onClick={() => { setShowAddMembers(false); setAddSelectedUsers([]) }} className="px-4 py-2 bg-gray-600 text-white rounded">Cancel</button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-
-        {/* Delete Group Confirmation Modal */}
-        {showDeleteConfirm && (
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50"
-          >
-            <motion.div 
-              initial={{ scale: 0.95 }} 
-              animate={{ scale: 1 }} 
-              className="bg-dark-800 rounded-lg p-6 w-full max-w-md border-2 border-red-500/30"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold text-red-400 flex items-center gap-2">
-                  <TrashIcon className="w-6 h-6" />
-                  Delete Group
-                </h3>
-                <button 
-                  onClick={() => {
-                    setShowDeleteConfirm(false)
-                    setDeleteConfirmText('')
-                  }} 
-                  className="text-gray-400 hover:text-white"
-                >
-                  <XMarkIcon className="w-5 h-5"/>
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4">
-                  <p className="text-white text-sm mb-2">
-                    ⚠️ Warning: This action cannot be undone!
-                  </p>
-                  <p className="text-gray-300 text-sm">
-                    You are about to permanently delete the group "<strong>{activeChat?.name}</strong>". 
-                    All messages and data will be lost.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-white text-sm mb-2">
-                    Type <span className="font-bold text-red-400">CONFIRM</span> to delete:
-                  </label>
-                  <input
-                    type="text"
-                    value={deleteConfirmText}
-                    onChange={(e) => setDeleteConfirmText(e.target.value)}
-                    placeholder="Type CONFIRM here"
-                    className="w-full px-4 py-2 bg-dark-700 border border-gray-600 rounded text-white focus:border-red-500 focus:outline-none"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="flex gap-3">
-                  <button 
-                    onClick={handleDeleteGroup}
-                    disabled={deleteConfirmText !== 'CONFIRM'}
-                    className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Delete Group
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setShowDeleteConfirm(false)
-                      setDeleteConfirmText('')
-                    }} 
-                    className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </div>
+      </AnimatePresence>
     </div>
   )
 }

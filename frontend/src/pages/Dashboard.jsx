@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
-import { 
-  MapIcon, 
+import {
+  MapIcon,
   ChatBubbleLeftIcon,
   ExclamationTriangleIcon,
   TrophyIcon,
@@ -13,14 +13,15 @@ import {
 } from '@heroicons/react/24/outline'
 import { useAuth } from '../contexts/AuthContext'
 import { useSocket } from '../contexts/SocketContext'
-import { 
-  getLeaderboard, 
+import {
+  getLeaderboard,
   getActiveEmergencyAlerts,
   createRide,
   updateRide,
   updateUserStatus,
   updateProfile
 } from '../lib/supabaseHelpers'
+import { withTimeout, safeFetch, getLocationWithTimeout } from '../utils/asyncHelpers'
 
 const Dashboard = () => {
   const [stats, setStats] = useState(null)
@@ -33,79 +34,118 @@ const Dashboard = () => {
   const [isRiding, setIsRiding] = useState(false)
   const [currentLocation, setCurrentLocation] = useState(null)
   const [currentRide, setCurrentRide] = useState(null) // store current ride record (or id)
-  
+  const [loadingStates, setLoadingStates] = useState({
+    stats: false,
+    weather: false,
+    alerts: false,
+    leaderboard: false,
+    location: false
+  })
+
   const { user, profile, session } = useAuth()
   const { socket, connected, onlineUsers } = useSocket()
 
-  // Debug logging to help diagnose why the dashboard might be blank in some environments
-  useEffect(() => {
-    try {
-      if (import.meta.env?.DEV) {
-        console.log('DBG Dashboard state:', {
-          currentLocation,
-          nearbyAlertsCount: nearbyAlerts?.length,
-          weatherLoaded: !!weather,
-          statsLoaded: !!stats
-        })
-      }
-    } catch (e) {
-      // ignore in non-Vite environments
-    }
-  }, [currentLocation, nearbyAlerts, weather, stats])
+  // Safe loading state helper
+  const setLoading = (key, value) => {
+    setLoadingStates(prev => ({ ...prev, [key]: value }))
+  }
+
+
 
   useEffect(() => {
-    fetchUserStats()
-    fetchWeather()
-    fetchNearbyAlerts()
-    fetchLeaderboard()
-    getCurrentLocation()
-    
-  // Use the Battery Status API when supported to read device battery level and charging state
-    let batteryMgr = null
-    const initBattery = async () => {
+    // Initialize all data fetching with simple async calls
+    const initializeDashboard = async () => {
       try {
-        if ('getBattery' in navigator) {
-          const battery = await navigator.getBattery()
-          batteryMgr = battery
-          
-          const updateBattery = () => {
-            const level = Math.round(battery.level * 100)
-            const charging = Boolean(battery.charging)
-            setBatteryLevel(level)
-            setIsCharging(charging)
-            console.log('Battery updated:', level, charging)
-          }
+        // Initialize basic data first
+        fetchUserStats()
+        
+        // Then initialize other data in parallel without blocking render
+        Promise.allSettled([
+          initWeatherSafely(),
+          initAlertsSafely(), 
+          initLeaderboardSafely(),
+          initLocationSafely(),
+          initBatterySafely()
+        ])
+      } catch (error) {
+        // Silent fail - dashboard will show loading states
+      }
+    }
 
-          updateBattery()
-          
-          battery.addEventListener('levelchange', updateBattery)
-          battery.addEventListener('chargingchange', updateBattery)
-          } else {
-          console.warn('Battery API not supported in this browser')
-          setBatterySupported(false)
-          // If Battery API isn't available, clear battery info so the UI hides the battery card
-          setBatteryLevel(null)
+    initializeDashboard()
+  }, [])
+
+  // Simplified safe initialization functions - responsive to actual server speed
+  const initWeatherSafely = async () => {
+    setLoading('weather', true)
+    try {
+      await withTimeout(fetchWeather(), 8000, 'weather fetch')
+    } catch (error) {
+      // Silent fail
+    } finally {
+      setLoading('weather', false)
+    }
+  }
+
+  const initAlertsSafely = async () => {
+    setLoading('alerts', true)
+    try {
+      await withTimeout(fetchNearbyAlerts(), 5000, 'alerts fetch')
+    } catch (error) {
+      // Silent fail
+    } finally {
+      setLoading('alerts', false)
+    }
+  }
+
+  const initLeaderboardSafely = async () => {
+    setLoading('leaderboard', true)
+    try {
+      await withTimeout(fetchLeaderboard(), 5000, 'leaderboard fetch')
+    } catch (error) {
+      // Silent fail
+    } finally {
+      setLoading('leaderboard', false)
+    }
+  }
+
+  const initLocationSafely = async () => {
+    setLoading('location', true)
+    try {
+      await withTimeout(getCurrentLocation(), 6000, 'location fetch')
+    } catch (error) {
+      // Silent fail
+    } finally {
+      setLoading('location', false)
+    }
+  }
+
+  const initBatterySafely = async () => {
+    try {
+      if ('getBattery' in navigator) {
+        const battery = await withTimeout(navigator.getBattery(), 2000, 'battery API') // Very quick
+        
+        const updateBattery = () => {
+          const level = Math.round(battery.level * 100)
+          const charging = Boolean(battery.charging)
+          setBatteryLevel(level)
+          setIsCharging(charging)
         }
-      } catch (err) {
-        console.warn('Battery API error:', err)
+
+        updateBattery()
+        battery.addEventListener('levelchange', updateBattery)
+        battery.addEventListener('chargingchange', updateBattery)
+        
+      } else {
         setBatterySupported(false)
         setBatteryLevel(null)
       }
+    } catch (err) {
+      // Battery API not supported
+      setBatterySupported(false)
+      setBatteryLevel(null)
     }
-    
-    initBattery()
-
-    return () => {
-      try {
-        if (batteryMgr) {
-          batteryMgr.removeEventListener('levelchange', () => {})
-          batteryMgr.removeEventListener('chargingchange', () => {})
-        }
-      } catch (e) {
-        // no-op: ignore errors while removing event listeners
-      }
-    }
-  }, [])
+  }
 
   useEffect(() => {
     if (!socket) return
@@ -116,8 +156,7 @@ const Dashboard = () => {
 
     socket.on('battery-alert', (data) => {
       if (data.batteryLevel < 20) {
-        // Handle low battery: notify user and log for debugging
-        console.log('Low battery alert received:', data)
+        // Handle low battery: notify user
       }
     })
 
@@ -127,18 +166,15 @@ const Dashboard = () => {
     }
   }, [socket])
 
-  const getCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setCurrentLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude
-          })
-        },
-        (error) => console.error('Location error:', error),
-        { enableHighAccuracy: true, maximumAge: 10000 }
-      )
+  const getCurrentLocation = async () => {
+    try {
+      const position = await getLocationWithTimeout({}, 10000)
+      setCurrentLocation({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude
+      })
+    } catch (error) {
+      // Silent fail - dashboard will show no location
     }
   }
 
@@ -150,16 +186,16 @@ const Dashboard = () => {
     const Δφ = (lat2 - lat1) * Math.PI / 180
     const Δλ = (lon2 - lon1) * Math.PI / 180
 
-    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ/2) * Math.sin(Δλ/2)
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) *
+      Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     return R * c
   }
 
   const fetchUserStats = async () => {
     try {
-  // Build stats object from the profile provided by AuthContext
+      // Build stats object from the profile provided by AuthContext
       if (profile) {
         const statsData = {
           totalRides: profile.total_rides || 0,
@@ -170,431 +206,140 @@ const Dashboard = () => {
         setStats(statsData)
       }
     } catch (error) {
-      console.error('Stats fetch error:', error)
+      // Stats fetch failed
     }
   }
 
   const fetchWeather = async () => {
-    console.log('🌤️ Starting weather fetch...')
-    
-    if (!navigator.geolocation) {
-      console.log('❌ Geolocation not supported')
-      return
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const lat = position.coords.latitude
-          const lon = position.coords.longitude
-          console.log(`📍 Location: ${lat}, ${lon}`)
-          console.log(`🎯 Location accuracy: ${position.coords.accuracy} meters`)
-
-          // Prefer fetching weather from our backend API (it may aggregate, cache, or add context)
-          const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000'
-          console.log(`🔗 Backend URL: ${API_BASE}`)
-
-          // Use the session token from AuthContext for authenticated backend requests if available
-          const token = (typeof session !== 'undefined' && session?.access_token) ? session.access_token : 'demo-token'
-
-          const url = `${API_BASE.replace(/\/$/, '')}/api/weather/current?latitude=${lat}&longitude=${lon}`
-          console.log(`🌐 Trying backend API: ${url}`)
-
-          try {
-            const res = await fetch(url, {
-              headers: {
-                'Accept': 'application/json',
-                'Authorization': `Bearer ${token}`
-              }
-            })
-
-            console.log(`🔄 Backend response status: ${res.status}`)
-
-            if (res.ok) {
-              const body = await res.json()
-              console.log('📦 Backend response:', body)
-              
-              // Expecting backend response in the shape: { success: true, weather: { ... } }
-              if (body && body.success && body.weather) {
-                console.log('✅ Using backend weather data')
-                setWeather(body.weather)
-                return
-              }
-            }
-            throw new Error(`Backend weather API returned ${res.status}`)
-          } catch (backendError) {
-            console.log('⚠️ Backend weather API failed, trying direct OpenWeather API...', backendError)
-            
-            // If backend fails, fall back to calling public weather APIs directly
-            const weatherApiKey = import.meta.env.VITE_OPENWEATHER_API_KEY
-            console.log(`🔑 Weather API Key: ${weatherApiKey ? 'Found' : 'Missing'}`)
-            
-            // Try OpenMeteo first — usually accurate and free to use
-            try {
-              const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=auto`
-              console.log(`🌐 Trying OpenMeteo API (most accurate free API)...`)
-              
-              const meteoRes = await fetch(openMeteoUrl)
-              if (meteoRes.ok) {
-                const meteoData = await meteoRes.json()
-                console.log('📦 OpenMeteo response:', meteoData)
-                
-                const weatherData = {
-                  location: {
-                    name: 'Current Location',
-                    country: 'IN',
-                    coordinates: { latitude: lat, longitude: lon }
-                  },
-                  current: {
-                    temperature: Math.round(meteoData.current_weather.temperature),
-                    feelsLike: Math.round(meteoData.current_weather.temperature - 2), // approximate 'feels like' temperature
-                    humidity: meteoData.hourly.relative_humidity_2m[0] || 50,
-                    pressure: 1013, // default pressure value
-                    visibility: 10,
-                    windSpeed: meteoData.current_weather.windspeed,
-                    windDirection: meteoData.current_weather.winddirection,
-                    description: meteoData.current_weather.weathercode === 0 ? 'clear sky' : 
-                                meteoData.current_weather.weathercode <= 3 ? 'partly cloudy' : 'cloudy',
-                    main: meteoData.current_weather.weathercode === 0 ? 'Clear' : 'Clouds',
-                    icon: meteoData.current_weather.is_day ? '01d' : '01n'
-                  },
-                  rideConditions: {
-                    isGoodForRiding: meteoData.current_weather.weathercode <= 3 && meteoData.current_weather.windspeed < 15,
-                    warnings: meteoData.current_weather.windspeed > 15 ? ['Strong winds'] : [],
-                    recommendation: meteoData.current_weather.is_day ? 'Good for riding' : 'Night riding - use proper lighting'
-                  },
-                  debug: {
-                    source: 'OpenMeteo (Most Accurate)',
-                    isNight: !meteoData.current_weather.is_day,
-                    timestamp: new Date().toLocaleString()
-                  }
-                }
-                
-                console.log('✅ Using OpenMeteo weather data (most accurate):', weatherData)
-                setWeather(weatherData)
-                return
-              }
-            } catch (meteoError) {
-              console.log('⚠️ OpenMeteo failed, trying WeatherAPI...', meteoError)
-            }
-            
-            // If provided, try WeatherAPI.com using the API key (often high accuracy)
-            const weatherAPIKey = import.meta.env.VITE_WEATHERAPI_KEY
-            if (weatherAPIKey && weatherAPIKey !== 'your-weatherapi-key-here') {
-              try {
-                const weatherAPIUrl = `https://api.weatherapi.com/v1/current.json?key=${weatherAPIKey}&q=${lat},${lon}&aqi=no`
-                console.log(`🌐 Trying WeatherAPI.com (most accurate)...`)
-                
-                const weatherAPIRes = await fetch(weatherAPIUrl)
-                if (weatherAPIRes.ok) {
-                  const weatherAPIData = await weatherAPIRes.json()
-                  console.log('📦 WeatherAPI response:', weatherAPIData)
-                  
-                  const weatherData = {
-                    location: {
-                      name: weatherAPIData.location.name,
-                      country: weatherAPIData.location.country,
-                      coordinates: { latitude: lat, longitude: lon }
-                    },
-                    current: {
-                      temperature: Math.round(weatherAPIData.current.temp_c),
-                      feelsLike: Math.round(weatherAPIData.current.feelslike_c),
-                      humidity: weatherAPIData.current.humidity,
-                      pressure: weatherAPIData.current.pressure_mb,
-                      visibility: weatherAPIData.current.vis_km,
-                      windSpeed: weatherAPIData.current.wind_kph / 3.6, // convert from km/h to m/s
-                      windDirection: weatherAPIData.current.wind_degree,
-                      description: weatherAPIData.current.condition.text.toLowerCase(),
-                      main: weatherAPIData.current.condition.text,
-                      icon: weatherAPIData.current.is_day ? '01d' : '01n'
-                    },
-                    rideConditions: {
-                      isGoodForRiding: !weatherAPIData.current.condition.text.toLowerCase().includes('rain') && 
-                                      !weatherAPIData.current.condition.text.toLowerCase().includes('storm') &&
-                                      weatherAPIData.current.wind_kph < 50,
-                      warnings: weatherAPIData.current.is_day ? [] : ['Night time - use proper lighting'],
-                      recommendation: weatherAPIData.current.is_day ? 'Good for riding' : 'Night riding - use proper lighting'
-                    },
-                    debug: {
-                      source: 'WeatherAPI.com (Most Accurate)',
-                      isNight: !weatherAPIData.current.is_day,
-                      timestamp: new Date().toLocaleString()
-                    }
-                  }
-                  
-                  console.log('✅ Using WeatherAPI.com data (most accurate):', weatherData)
-                  setWeather(weatherData)
-                  return
-                }
-              } catch (weatherAPIError) {
-                console.error('❌ WeatherAPI.com failed:', weatherAPIError)
-              }
-            }
-            
-            // Fall back to OpenWeather if earlier services fail
-            if (weatherApiKey && weatherApiKey !== 'demo-api-key-replace-with-real-key') {
-              try {
-                const directUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${weatherApiKey}&units=metric`
-                console.log(`🌐 Trying direct OpenWeather API...`)
-                
-                const directRes = await fetch(directUrl)
-                console.log(`🔄 Direct API response status: ${directRes.status}`)
-                
-                if (directRes.ok) {
-                  const directData = await directRes.json()
-                  console.log('📦 Direct API response:', directData)
-                  
-                  // Normalize the OpenWeather response into our expected weather format
-                  const weatherData = {
-                    location: {
-                      name: directData.name,
-                      country: directData.sys.country,
-                      coordinates: { latitude: lat, longitude: lon }
-                    },
-                    current: {
-                      temperature: Math.round(directData.main.temp),
-                      feelsLike: Math.round(directData.main.feels_like),
-                      humidity: directData.main.humidity,
-                      pressure: directData.main.pressure,
-                      visibility: directData.visibility / 1000,
-                      windSpeed: directData.wind.speed,
-                      windDirection: directData.wind.deg,
-                      description: directData.weather[0].description,
-                      main: directData.weather[0].main,
-                      icon: directData.weather[0].icon
-                    },
-                    rideConditions: {
-                      isGoodForRiding: true, // Simple default logic
-                      warnings: directData.weather[0].icon.includes('n') ? ['Night time - reduced visibility'] : [],
-                      recommendation: directData.weather[0].icon.includes('n') ? 'Night riding - use proper lighting' : 'Good for riding'
-                    },
-                    debug: {
-                      source: 'OpenWeather Direct API',
-                      isNight: directData.weather[0].icon.includes('n'),
-                      timestamp: new Date().toLocaleString()
-                    }
-                  }
-                  
-                  console.log('✅ Using direct weather data:', weatherData)
-                  setWeather(weatherData)
-                  return
-                } else {
-                  console.log('❌ Direct API failed with status:', directRes.status)
-                }
-              } catch (directError) {
-                console.error('❌ Direct OpenWeather API failed:', directError)
-              }
-            } else {
-              console.log('❌ No valid weather API key found')
-            }
-            
-            // Final fallback to demo weather
-            console.log('🔄 Using fallback weather data')
-            setWeather({ 
-              current: { 
-                temperature: 15, // Changed to match current PC weather
-                description: 'clear sky',
-                humidity: 65,
-                windSpeed: 2.5
-              }, 
-              rideConditions: { 
-                isGoodForRiding: true, 
-                warnings: [],
-                recommendation: 'Good for riding'
-              },
-              location: {
-                name: 'Demo Location',
-                country: 'IN'
-              }
-            })
-          }
-        } catch (error) {
-          console.error('❌ Weather fetch error:', error)
-          // Final fallback weather
-          setWeather({ 
-            current: { 
-              temperature: 22, 
-              description: 'clear sky' 
-            }, 
-            rideConditions: { 
-              isGoodForRiding: true, 
-              warnings: [] 
-            } 
-          })
-        }
-      },
-      (error) => {
-        console.error('❌ Location error:', error)
-        // If location permission denied, use Delhi coordinates as default
-        const defaultLat = 28.6139
-        const defaultLon = 77.2090
-        console.log('🎯 Using default Delhi coordinates for weather...')
-        
-        // Try to fetch weather with default coordinates
-        fetchWeatherForCoordinates(defaultLat, defaultLon)
-      },
-      { 
-        enableHighAccuracy: true, 
-        timeout: 10000, 
-        maximumAge: 300000 // 5 minutes cache
-      }
-    )
-  }
-
-  const fetchWeatherForCoordinates = async (lat, lon) => {
     try {
-      console.log(`📍 Fetching weather for coordinates: ${lat}, ${lon}`)
-      
-      // Try backend API first (preferred method)
-      const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000'
-      console.log(`🔗 Backend URL: ${API_BASE}`)
+      // Use safe geolocation with timeout
+      const position = await getLocationWithTimeout({}, 8000)
+      const lat = position.coords.latitude
+      const lon = position.coords.longitude
 
-      // Get a token from Auth context (Supabase session) if available
+      // Prefer fetching weather from our backend API
+      const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:5001'
       const token = (typeof session !== 'undefined' && session?.access_token) ? session.access_token : 'demo-token'
-
       const url = `${API_BASE.replace(/\/$/, '')}/api/weather/current?latitude=${lat}&longitude=${lon}`
-      console.log(`🌐 Trying backend API: ${url}`)
 
       try {
-        const res = await fetch(url, {
+        // Try backend with safe fetch
+        const res = await safeFetch(url, {
           headers: {
             'Accept': 'application/json',
             'Authorization': `Bearer ${token}`
           }
-        })
+        }, 6000, 1)
 
-        console.log(`🔄 Backend response status: ${res.status}`)
-
-        if (res.ok) {
-          const body = await res.json()
-          console.log('📦 Backend response:', body)
-          
-          // backend returns { success: true, weather: { ... } }
-          if (body && body.success && body.weather) {
-            console.log('✅ Using backend weather data')
-            setWeather(body.weather)
-            return
-          }
+        const body = await res.json()
+        if (body && body.success && body.weather) {
+          setWeather(body.weather)
+          return
         }
-        throw new Error(`Backend weather API returned ${res.status}`)
       } catch (backendError) {
-        console.log('⚠️ Backend weather API failed, trying direct APIs...', backendError)
-        
-        // Try WeatherAPI.com (most accurate with API key)
-        const weatherAPIKey = import.meta.env.VITE_WEATHERAPI_KEY
-        if (weatherAPIKey && weatherAPIKey !== 'your-weatherapi-key-here') {
-          try {
-            const weatherAPIUrl = `https://api.weatherapi.com/v1/current.json?key=${weatherAPIKey}&q=${lat},${lon}&aqi=no`
-            console.log(`🌐 Trying WeatherAPI.com (most accurate)...`)
-            
-            const weatherAPIRes = await fetch(weatherAPIUrl)
-            if (weatherAPIRes.ok) {
-              const weatherAPIData = await weatherAPIRes.json()
-              console.log('📦 WeatherAPI response:', weatherAPIData)
-              
-              const weatherData = {
-                location: {
-                  name: weatherAPIData.location.name,
-                  country: weatherAPIData.location.country,
-                  coordinates: { latitude: lat, longitude: lon }
-                },
-                current: {
-                  temperature: Math.round(weatherAPIData.current.temp_c),
-                  feelsLike: Math.round(weatherAPIData.current.feelslike_c),
-                  humidity: weatherAPIData.current.humidity,
-                  pressure: weatherAPIData.current.pressure_mb,
-                  visibility: weatherAPIData.current.vis_km,
-                  windSpeed: weatherAPIData.current.wind_kph / 3.6, // Convert to m/s
-                  windDirection: weatherAPIData.current.wind_degree,
-                  description: weatherAPIData.current.condition.text.toLowerCase(),
-                  main: weatherAPIData.current.condition.text,
-                  icon: weatherAPIData.current.is_day ? '01d' : '01n'
-                },
-                rideConditions: {
-                  isGoodForRiding: !weatherAPIData.current.condition.text.toLowerCase().includes('rain') && 
-                                  !weatherAPIData.current.condition.text.toLowerCase().includes('storm') &&
-                                  weatherAPIData.current.wind_kph < 50,
-                  warnings: weatherAPIData.current.is_day ? [] : ['Night time - use proper lighting'],
-                  recommendation: weatherAPIData.current.is_day ? 'Good for riding' : 'Night riding - use proper lighting'
-                },
-                debug: {
-                  source: 'WeatherAPI.com (Most Accurate)',
-                  isNight: !weatherAPIData.current.is_day,
-                  timestamp: new Date().toLocaleString()
-                }
-              }
-              
-              console.log('✅ Using WeatherAPI.com data (most accurate):', weatherData)
-              setWeather(weatherData)
-              return
-            }
-          } catch (weatherAPIError) {
-            console.error('❌ WeatherAPI.com failed:', weatherAPIError)
-          }
-        }
-        
-        // Final fallback to demo weather
-        console.log('🔄 Using fallback weather data')
-        setWeather({ 
-          current: { 
-            temperature: 15, // Changed to match current night weather
-            description: 'clear sky',
-            humidity: 65,
-            windSpeed: 2.5
-          }, 
-          rideConditions: { 
-            isGoodForRiding: true, 
-            warnings: ['Location permission required for accurate weather'],
-            recommendation: 'Allow location for real weather data'
-          },
-          location: {
-            name: 'Demo Location',
-            country: 'IN'
-          }
-        })
+        // Try fallback APIs
       }
+
+      // Fallback to external APIs with timeout
+      await fetchWeatherFallback(lat, lon)
+      
     } catch (error) {
-      console.error('❌ Weather fetch error:', error)
-      // Final fallback weather
-      setWeather({ 
-        current: { 
-          temperature: 15, 
-          description: 'clear sky' 
-        }, 
-        rideConditions: { 
-          isGoodForRiding: true, 
-          warnings: ['Location permission required'] 
-        } 
+      // Set a minimal fallback weather state
+      setWeather({
+        current: {
+          temperature: '--',
+          description: 'Weather unavailable',
+          main: 'Unknown',
+          icon: '01d'
+        },
+        rideConditions: {
+          isGoodForRiding: true,
+          warnings: ['Weather data unavailable'],
+          recommendation: 'Check local conditions before riding'
+        },
+        debug: {
+          source: 'Fallback',
+          error: error.message,
+          timestamp: new Date().toLocaleString()
+        }
       })
     }
   }
 
-  const fetchNearbyAlerts = async () => {
-    if (!navigator.geolocation) return
+  const fetchWeatherFallback = async (lat, lon) => {
+    // Try OpenMeteo first (free, reliable)
+    try {
+      const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=auto`
+      const meteoRes = await safeFetch(openMeteoUrl, {}, 5000, 1)
+      const meteoData = await meteoRes.json()
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const alerts = await getActiveEmergencyAlerts(
-            position.coords.longitude,
-            position.coords.latitude,
-            10000 // 10km radius
-          )
-          setNearbyAlerts(Array.isArray(alerts) ? alerts.slice(0, 5) : [])
-        } catch (error) {
-          console.error('Alerts fetch error:', error)
+      const weatherData = {
+        location: {
+          name: 'Current Location',
+          country: 'IN',
+          coordinates: { latitude: lat, longitude: lon }
+        },
+        current: {
+          temperature: Math.round(meteoData.current_weather.temperature),
+          feelsLike: Math.round(meteoData.current_weather.temperature - 2),
+          humidity: meteoData.hourly.relative_humidity_2m[0] || 50,
+          pressure: 1013,
+          visibility: 10,
+          windSpeed: meteoData.current_weather.windspeed,
+          windDirection: meteoData.current_weather.winddirection,
+          description: meteoData.current_weather.weathercode === 0 ? 'clear sky' :
+            meteoData.current_weather.weathercode <= 3 ? 'partly cloudy' : 'cloudy',
+          main: meteoData.current_weather.weathercode === 0 ? 'Clear' : 'Clouds',
+          icon: meteoData.current_weather.is_day ? '01d' : '01n'
+        },
+        rideConditions: {
+          isGoodForRiding: meteoData.current_weather.weathercode <= 3 && meteoData.current_weather.windspeed < 15,
+          warnings: meteoData.current_weather.windspeed > 15 ? ['Strong winds'] : [],
+          recommendation: meteoData.current_weather.is_day ? 'Good for riding' : 'Night riding - use proper lighting'
+        },
+        debug: {
+          source: 'OpenMeteo (Fallback)',
+          isNight: !meteoData.current_weather.is_day,
+          timestamp: new Date().toLocaleString()
         }
-      },
-      (error) => console.error('Location error:', error)
-    )
+      }
+
+      setWeather(weatherData)
+      return
+    } catch (error) {
+      // Fallback failed
+      throw error
+    }
+  }
+
+  const fetchNearbyAlerts = async () => {
+    try {
+      const position = await getLocationWithTimeout({}, 8000)
+      const alerts = await withTimeout(
+        getActiveEmergencyAlerts(
+          position.coords.longitude,
+          position.coords.latitude,
+          10000 // 10km radius
+        ),
+        6000,
+        'emergency alerts fetch'
+      )
+      setNearbyAlerts(Array.isArray(alerts) ? alerts.slice(0, 5) : [])
+    } catch (error) {
+      setNearbyAlerts([]) // Fallback to empty alerts
+    }
   }
 
   const fetchLeaderboard = async () => {
     try {
-      const leaderboardData = await getLeaderboard(5)
+      const leaderboardData = await withTimeout(
+        getLeaderboard(5),
+        8000,
+        'leaderboard fetch'
+      )
       setLeaderboard(leaderboardData || [])
     } catch (error) {
-      console.error('Leaderboard fetch error:', error)
+      setLeaderboard([]) // Fallback to empty leaderboard
     }
   }
 
@@ -610,7 +355,7 @@ const Dashboard = () => {
         latitude: currentLocation.latitude,
         address: 'Starting location'
       })
-      
+
       // store ride locally so we can end it later
       setCurrentRide(ride)
       setIsRiding(true)
@@ -625,7 +370,7 @@ const Dashboard = () => {
           shareLocation: share
         })
       } catch (e) {
-        console.warn('Failed to emit ride-start event', e)
+        // Failed to emit event
       }
 
       // update profile is_riding flag
@@ -638,12 +383,11 @@ const Dashboard = () => {
         // update local stats state for immediate feedback
         setStats(prev => ({ ...(prev || {}), totalRides: newTotal }))
       } catch (e) {
-        console.warn('Failed to update profile ride count:', e)
+        // Failed to update profile
       }
 
       alert('Ride started! Stay safe!')
     } catch (error) {
-      console.error('Start ride error:', error)
       alert('Failed to start ride')
     }
   }
@@ -677,7 +421,7 @@ const Dashboard = () => {
       try {
         socket?.sendRideEvent && socket.sendRideEvent('ride-end', { rideId: currentRide.id || currentRide, userId: user.id })
       } catch (e) {
-        console.warn('Failed to emit ride-end event', e)
+        // Failed to emit event
       }
 
       // clear local ride state
@@ -689,7 +433,6 @@ const Dashboard = () => {
 
       alert('Ride ended — good job!')
     } catch (error) {
-      console.error('End ride error:', error)
       alert('Failed to end ride')
     }
   }
@@ -726,7 +469,7 @@ const Dashboard = () => {
       description: 'Chat with nearby riders',
       icon: ChatBubbleLeftIcon,
       color: 'neon-purple',
-      action: () => {},
+      action: () => { },
       link: '/chat'
     },
     {
@@ -734,7 +477,7 @@ const Dashboard = () => {
       description: 'Check your points and achievements',
       icon: TrophyIcon,
       color: 'yellow-500',
-      action: () => {},
+      action: () => { },
       link: '/profile'
     }
   ]
@@ -746,302 +489,373 @@ const Dashboard = () => {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="mb-12"
         >
-          <h1 className="text-3xl md:text-4xl font-orbitron font-bold text-white mb-2">
-            Welcome back, {profile?.name || user?.user_metadata?.name || 'Rider'}!
+          <h1 className="text-3xl md:text-4xl font-bold text-alabaster mb-4">
+            Dashboard
           </h1>
-          <p className="text-gray-300">
-            Ready for your next adventure? Here's your riding dashboard.
+          <p className="text-xl text-dusty">
+            Welcome back, {profile?.name || user?.user_metadata?.name || 'Rider'}. Monitor your ride status and access safety features.
           </p>
         </motion.div>
 
-        {/* Status Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {/* Connection Status */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="card-glow"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Connection</h3>
-              <div className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
-            </div>
-            <p className="text-2xl font-bold text-neon-cyan">
-              {connected ? 'Online' : 'Offline'}
-            </p>
-            <p className="text-sm text-gray-400">
-              {onlineUsers.length} riders nearby
-            </p>
-          </motion.div>
-
-          {/* Battery Status */}
-          {batteryLevel !== null && batterySupported && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="card-glow"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Battery</h3>
-                <div className="flex items-center gap-2">
-                  {isCharging ? (
-                    <BoltIcon className="w-6 h-6 text-green-400 animate-pulse" />
-                  ) : (
-                    <BoltIcon className="w-6 h-6 text-yellow-500" />
-                  )}
-                </div>
-            </div>
-              <p className="text-2xl font-bold text-neon-cyan">{batteryLevel}% {isCharging && <span className="text-sm text-green-400">(Charging)</span>}</p>
-            <div className="w-full bg-dark-600 rounded-full h-2 mt-2">
-              <div 
-                className={`h-2 rounded-full transition-all duration-300 ${
-                  batteryLevel > 50 ? 'bg-green-500' : batteryLevel > 20 ? 'bg-yellow-500' : 'bg-red-500'
-                }`}
-                style={{ width: `${batteryLevel}%` }}
-              />
-            </div>
-            {batteryLevel <= 20 && (
-              <button
-                onClick={sendBatteryAlert}
-                className="text-xs text-red-400 hover:text-red-300 mt-2"
-              >
-                Send Low Battery Alert
-              </button>
-            )}
-          </motion.div>
-          )}
-
-          {/* Weather */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="card-glow"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Weather</h3>
-              <CloudIcon className="w-6 h-6 text-blue-400" />
-            </div>
-            {weather ? (
-              <>
-                <p className="text-2xl font-bold text-neon-cyan">
-                  {weather.current.temperature}°C
-                </p>
-                <p className="text-sm text-gray-400 capitalize">
-                  {weather.current.description}
-                </p>
-                <div className={`text-xs mt-2 ${
-                  weather.rideConditions.isGoodForRiding ? 'text-green-400' : 'text-red-400'
-                }`}>
-                  {weather.rideConditions.isGoodForRiding ? '✓ Good for riding' : '⚠ Poor conditions'}
-                </div>
-              </>
-            ) : (
-              <p className="text-gray-400">Loading...</p>
-            )}
-          </motion.div>
-
-          {/* Ride Status */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="card-glow"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Ride Status</h3>
-              <div className={`w-3 h-3 rounded-full ${isRiding ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
-            </div>
-            <p className="text-2xl font-bold text-neon-cyan">
-              {isRiding ? 'Riding' : 'Parked'}
-            </p>
-            <button
-              onClick={isRiding ? endRide : startRide}
-              className={`text-xs mt-2 px-3 py-1 rounded transition-colors ${
-                isRiding 
-                  ? 'bg-red-600 hover:bg-red-700 text-white' 
-                  : 'bg-green-600 hover:bg-green-700 text-white'
-              }`}
-            >
-              {isRiding ? 'End Ride' : 'Start Ride'}
-            </button>
-          </motion.div>
-        </div>
-
-        {/* Quick Actions */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="mb-8"
-        >
-          <h2 className="text-2xl font-orbitron font-bold text-white mb-6">Quick Actions</h2>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {quickFeatures.map((feature, index) => {
-              const Icon = feature.icon
-              return (
-                <Link
-                  key={feature.title}
-                  to={feature.link}
-                  className="group"
-                >
-                  <motion.div
-                    whileHover={{ scale: 1.05, y: -5 }}
-                    whileTap={{ scale: 0.95 }}
-                    className="card-glow h-full cursor-pointer"
-                  >
-                    <div className={`text-${feature.color} mb-4`}>
-                      <Icon className="w-12 h-12 mx-auto" />
-                    </div>
-                    <h3 className="text-lg font-semibold text-white mb-2 text-center">
-                      {feature.title}
-                    </h3>
-                    <p className="text-sm text-gray-400 text-center">
-                      {feature.description}
-                    </p>
-                  </motion.div>
-                </Link>
-              )
-            })}
+        {/* System Status Panel */}
+        <section className="mb-14">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-semibold text-slate-900 dark:text-alabaster">System Status</h2>
+            <span className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Live Panel</span>
           </div>
-        </motion.div>
-
-        {/* Stats and Activity */}
-        <div className="grid lg:grid-cols-3 gap-8 mb-8">
-          {/* User Stats */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
-            className="lg:col-span-2"
+            className="rounded-2xl bg-gradient-to-br from-white/95 via-white/85 to-slate-100/80 dark:from-slate-900/85 dark:via-slate-900/75 dark:to-slate-950/80 shadow-[0_28px_70px_-30px_rgba(15,23,42,0.6)] dark:shadow-[0_36px_80px_-38px_rgba(0,0,0,0.95)] p-10 md:p-12"
           >
-            <h2 className="text-2xl font-orbitron font-bold text-white mb-6">Your Stats</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="card-glow text-center">
-                <ChartBarIcon className="w-8 h-8 text-neon-cyan mx-auto mb-2" />
-                <p className="text-2xl font-bold text-white">{stats?.totalRides || 0}</p>
-                <p className="text-sm text-gray-400">Total Rides</p>
-              </div>
-              <div className="card-glow text-center">
-                <MapIcon className="w-8 h-8 text-neon-purple mx-auto mb-2" />
-                <p className="text-2xl font-bold text-white">
-                  {stats?.totalDistance ? `${(stats.totalDistance / 1000).toFixed(0)}` : '0'}
-                </p>
-                <p className="text-sm text-gray-400">Total KM</p>
-              </div>
-              <div className="card-glow text-center">
-                <UserGroupIcon className="w-8 h-8 text-green-400 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-white">{stats?.helpCount || 0}</p>
-                <p className="text-sm text-gray-400">People Helped</p>
-              </div>
-              <div className="card-glow text-center">
-                <TrophyIcon className="w-8 h-8 text-yellow-400 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-white">{stats?.rewardPoints || 0}</p>
-                <p className="text-sm text-gray-400">Reward Points</p>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Leaderboard */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.7 }}
-          >
-            <h2 className="text-2xl font-orbitron font-bold text-white mb-6">Top Riders</h2>
-            <div className="card-glow">
-              {leaderboard.length > 0 ? (
-                <div className="space-y-3">
-                  {leaderboard.map((rider, index) => (
-                    <div key={rider.user._id} className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                          index === 0 ? 'bg-yellow-500 text-black' :
-                          index === 1 ? 'bg-gray-400 text-black' :
-                          index === 2 ? 'bg-orange-600 text-white' :
-                          'bg-dark-600 text-gray-300'
-                        }`}>
-                          {index + 1}
-                        </div>
-                        <span className="text-white text-sm">{rider.user.name}</span>
-                      </div>
-                      <span className="text-neon-cyan text-sm font-semibold">
-                        {rider.score} pts
-                      </span>
-                    </div>
-                  ))}
+            <div className="flex flex-col gap-8">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">System</p>
+                  <p className="text-4xl md:text-5xl font-bold text-slate-900 dark:text-alabaster">
+                    {connected ? 'Connected' : 'Offline'}
+                  </p>
+                  <p className="text-sm text-slate-600 dark:text-dusty">
+                    {onlineUsers.length} active riders • {isRiding ? 'Ride active' : 'Ride idle'}
+                  </p>
                 </div>
-              ) : (
-                <p className="text-gray-400 text-center">No leaderboard data</p>
-              )}
-            </div>
-          </motion.div>
-        </div>
+                <div className="flex items-center gap-3">
+                  <div className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                  <span className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Live</span>
+                </div>
+              </div>
 
-        {/* Recent Alerts */}
-        {nearbyAlerts.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8 }}
-          >
-            <h2 className="text-2xl font-orbitron font-bold text-white mb-6">Nearby Alerts</h2>
-            <div className="space-y-4">
-              {nearbyAlerts.slice(0, 3).map((alert) => (
-                <div key={alert.id} className="card-glow">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div className="text-2xl">
-                        {alert.type === 'accident' ? '🚨' :
-                         alert.type === 'breakdown' ? '🛠️' :
-                         alert.type === 'medical' ? '🏥' : '⚠️'}
-                      </div>
-                      <div>
-                        <h3 className="text-white font-semibold capitalize">
-                          {alert.type} Alert
-                        </h3>
-                        {(() => {
-                          let d = typeof alert.distance === 'number' ? alert.distance : null
-
-                          if (d === null && alert.location && Array.isArray(alert.location.coordinates) && alert.location.coordinates.length === 2 && currentLocation) {
-                            // server may store [longitude, latitude]
-                            d = calculateDistance(
-                              currentLocation.latitude,
-                              currentLocation.longitude,
-                              alert.location.coordinates[1],
-                              alert.location.coordinates[0]
-                            )
-                          }
-
-                          const distanceText = Number.isFinite(d)
-                            ? `${Math.round(d)}m away • ${alert.respondersCount || 0} responses`
-                            : `${alert.respondersCount || 0} responses`
-
-                          return <p className="text-sm text-gray-400">{distanceText}</p>
-                        })()}
-                        {alert.description && (
-                          <p className="text-sm text-gray-300 mt-1">
-                            {alert.description}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <Link
-                      to={`/emergency`}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors"
+              <div className="grid md:grid-cols-4 gap-6">
+                <div className="md:col-span-2 grid grid-cols-2 gap-6">
+                  <div className="pr-4 border-r border-slate-200/80 dark:border-white/10">
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Network</p>
+                    <p className="text-3xl font-bold text-slate-900 dark:text-alabaster">
+                      {connected ? 'Stable' : 'Degraded'}
+                    </p>
+                    <p className="text-sm text-slate-600 dark:text-dusty">Latency within range</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Ride Status</p>
+                    <p className="text-3xl font-bold text-accent">{isRiding ? 'Riding' : 'Parked'}</p>
+                    <button
+                      onClick={isRiding ? endRide : startRide}
+                      className={`text-xs mt-2 px-4 py-1.5 rounded-full transition-colors ${isRiding
+                        ? 'bg-red-600 hover:bg-red-700 text-white'
+                        : 'bg-green-600 hover:bg-green-700 text-white'
+                        }`}
                     >
-                      Respond
-                    </Link>
+                      {isRiding ? 'End Ride' : 'Start Ride'}
+                    </button>
                   </div>
                 </div>
-              ))}
+
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Battery</p>
+                    {batteryLevel !== null && batterySupported ? (
+                      <>
+                        <p className="text-3xl font-bold text-accent">
+                          {batteryLevel}% {isCharging && <span className="text-sm text-green-400">(Charging)</span>}
+                        </p>
+                        <div className="w-full bg-slate-200/70 dark:bg-dusk rounded-full h-2 mt-2">
+                          <div
+                            className={`h-2 rounded-full transition-all duration-300 ${batteryLevel > 50 ? 'bg-green-500' : batteryLevel > 20 ? 'bg-yellow-500' : 'bg-red-500'
+                              }`}
+                            style={{ width: `${batteryLevel}%` }}
+                          />
+                        </div>
+                        {batteryLevel <= 20 && (
+                          <button
+                            onClick={sendBatteryAlert}
+                            className="text-xs text-red-500 hover:text-red-600 mt-2"
+                          >
+                            Send Low Battery Alert
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-sm text-slate-600 dark:text-dusty">Battery status unavailable</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Weather</p>
+                    {weather ? (
+                      <>
+                        <p className="text-3xl font-bold text-accent">{weather.current.temperature}°C</p>
+                        <p className="text-sm text-slate-600 dark:text-dusty capitalize">{weather.current.description}</p>
+                        <p className={`text-xs ${weather.rideConditions.isGoodForRiding ? 'text-green-500' : 'text-red-500'}`}>
+                          {weather.rideConditions.isGoodForRiding ? 'Good for riding' : 'Poor conditions'}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-slate-600 dark:text-dusty">Loading...</p>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           </motion.div>
-        )}
+        </section>
+
+        {/* Status & Context Section */}
+        <section className="mb-12">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-alabaster">Context & Intelligence</h2>
+            <span className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Secondary systems</span>
+          </div>
+          <div className="grid lg:grid-cols-3 gap-6">
+            {/* Weather */}
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-50/80 via-white/60 to-slate-100/70 dark:from-slate-900/70 dark:via-slate-900/50 dark:to-slate-950/70 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.35)] dark:shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)] p-5"
+            >
+              <div className="absolute inset-x-0 top-0 h-24 pointer-events-none">
+                <div className="absolute -top-6 left-6 h-24 w-24 rounded-full bg-slate-300/30 dark:bg-slate-700/30 blur-2xl" />
+                <div className="absolute -top-4 right-8 h-28 w-28 rounded-full bg-sky-200/25 dark:bg-sky-500/10 blur-3xl" />
+              </div>
+
+              <div className="relative z-10 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Weather</p>
+                  <span className={`text-[10px] px-2.5 py-1 rounded-full border ${weather?.rideConditions?.isGoodForRiding ? 'text-green-600 border-green-200/70 bg-green-50/70 dark:text-green-300 dark:border-green-500/30 dark:bg-green-500/10' : 'text-red-600 border-red-200/70 bg-red-50/70 dark:text-red-300 dark:border-red-500/30 dark:bg-red-500/10'}`}>
+                    {weather?.rideConditions?.isGoodForRiding ? 'Good for riding' : 'Poor conditions'}
+                  </span>
+                </div>
+
+                <div className="relative flex flex-col items-center text-center">
+                  <CloudIcon className="absolute -top-2 h-24 w-24 text-slate-400/20 dark:text-slate-600/20" />
+                  {weather ? (
+                    <>
+                      <p className="text-4xl font-semibold text-slate-900 dark:text-alabaster">
+                        {weather.current.temperature}°C
+                      </p>
+                      <p className="text-sm text-slate-600 dark:text-dusty capitalize mt-1">
+                        {weather.current.description}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-slate-600 dark:text-dusty">Loading...</p>
+                  )}
+                </div>
+
+                {weather && (
+                  <div className="grid grid-cols-3 gap-3 text-[11px] text-slate-600 dark:text-dusty">
+                    <div className="flex flex-col items-center">
+                      <BoltIcon className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+                      <span className="uppercase tracking-[0.2em] text-[10px] text-slate-500 dark:text-dusty mt-1">Wind</span>
+                      <span className="font-semibold text-slate-800 dark:text-alabaster">{Math.round(weather.current.windSpeed || 0)} m/s</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <CloudIcon className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+                      <span className="uppercase tracking-[0.2em] text-[10px] text-slate-500 dark:text-dusty mt-1">Humidity</span>
+                      <span className="font-semibold text-slate-800 dark:text-alabaster">{weather.current.humidity ?? 0}%</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <MapIcon className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+                      <span className="uppercase tracking-[0.2em] text-[10px] text-slate-500 dark:text-dusty mt-1">Visibility</span>
+                      <span className="font-semibold text-slate-800 dark:text-alabaster">{weather.current.visibility ?? 0} km</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+
+            <div className="lg:col-span-2 space-y-6">
+              {/* Rider Stats */}
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="rounded-2xl bg-white/70 dark:bg-slate-900/55 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.35)] dark:shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)] p-5"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Rider Stats</p>
+                  <ChartBarIcon className="w-5 h-5 text-slate-500 dark:text-dusty" />
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="rounded-xl bg-white/80 dark:bg-slate-900/60 shadow-sm p-4 text-center">
+                    <ChartBarIcon className="w-7 h-7 text-accent mx-auto mb-3" />
+                    <p className="text-2xl font-semibold text-slate-900 dark:text-alabaster">{stats?.totalRides || 0}</p>
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Total Rides</p>
+                  </div>
+                  <div className="rounded-xl bg-white/80 dark:bg-slate-900/60 shadow-sm p-4 text-center">
+                    <MapIcon className="w-7 h-7 text-slate-500 dark:text-dusty mx-auto mb-3" />
+                    <p className="text-2xl font-semibold text-slate-900 dark:text-alabaster">
+                      {stats?.totalDistance ? `${(stats.totalDistance / 1000).toFixed(0)}` : '0'}
+                    </p>
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Total KM</p>
+                  </div>
+                  <div className="rounded-xl bg-white/80 dark:bg-slate-900/60 shadow-sm p-4 text-center">
+                    <UserGroupIcon className="w-7 h-7 text-green-500 mx-auto mb-3" />
+                    <p className="text-2xl font-semibold text-slate-900 dark:text-alabaster">{stats?.helpCount || 0}</p>
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">People Helped</p>
+                  </div>
+                  <div className="rounded-xl bg-white/80 dark:bg-slate-900/60 shadow-sm p-4 text-center">
+                    <TrophyIcon className="w-7 h-7 text-yellow-500 mx-auto mb-3" />
+                    <p className="text-2xl font-semibold text-slate-900 dark:text-alabaster">{stats?.rewardPoints || 0}</p>
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Reward Points</p>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* Leaderboard */}
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="rounded-2xl bg-white/70 dark:bg-slate-900/55 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.35)] dark:shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)] p-5"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Top Riders</p>
+                  <UserGroupIcon className="w-5 h-5 text-slate-500 dark:text-dusty" />
+                </div>
+                {leaderboard.length > 0 ? (
+                  <div className="space-y-3">
+                    {leaderboard.map((rider, index) => (
+                      <div key={rider.user._id} className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${index === 0 ? 'bg-yellow-500 text-black' :
+                            index === 1 ? 'bg-gray-300 text-black' :
+                              index === 2 ? 'bg-orange-600 text-white' :
+                                'bg-slate-200/80 text-slate-600 dark:bg-dusk dark:text-dusty'
+                            }`}>
+                            {index + 1}
+                          </div>
+                          <span className="text-slate-900 dark:text-alabaster text-sm">{rider.user.name}</span>
+                        </div>
+                        <span className="text-accent text-sm font-semibold">
+                          {rider.score} pts
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-600 dark:text-dusty text-center">No leaderboard data</p>
+                )}
+              </motion.div>
+
+              {/* Recent Alerts */}
+              {nearbyAlerts.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.5 }}
+                  className="rounded-2xl bg-white/70 dark:bg-slate-900/55 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.35)] dark:shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)] p-5"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Nearby Alerts</p>
+                    <ExclamationTriangleIcon className="w-5 h-5 text-slate-500 dark:text-dusty" />
+                  </div>
+                  <div className="space-y-4">
+                    {nearbyAlerts.slice(0, 3).map((alert) => (
+                      <div key={alert.id} className="rounded-xl bg-white/85 dark:bg-slate-900/70 shadow-sm p-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex items-start space-x-4">
+                            <div className="text-2xl">
+                              {alert.type === 'accident' ? '🚨' :
+                                alert.type === 'breakdown' ? '🛠️' :
+                                  alert.type === 'medical' ? '🏥' : '⚠️'}
+                            </div>
+                            <div>
+                              <h4 className="text-slate-900 dark:text-alabaster font-semibold capitalize">
+                                {alert.type} Alert
+                              </h4>
+                              {(() => {
+                                let d = typeof alert.distance === 'number' ? alert.distance : null
+
+                                if (d === null && alert.location && Array.isArray(alert.location.coordinates) && alert.location.coordinates.length === 2 && currentLocation) {
+                                  // server may store [longitude, latitude]
+                                  d = calculateDistance(
+                                    currentLocation.latitude,
+                                    currentLocation.longitude,
+                                    alert.location.coordinates[1],
+                                    alert.location.coordinates[0]
+                                  )
+                                }
+
+                                const distanceText = Number.isFinite(d)
+                                  ? `${Math.round(d)}m away • ${alert.respondersCount || 0} responses`
+                                  : `${alert.respondersCount || 0} responses`
+
+                                return <p className="text-xs text-slate-600 dark:text-dusty">{distanceText}</p>
+                              })()}
+                              {alert.description && (
+                                <p className="text-sm text-slate-600 dark:text-dusty mt-1">
+                                  {alert.description}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <Link
+                            to={`/emergency`}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-full transition-colors"
+                          >
+                            Respond
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </div>
+          </div>
+        </section>
+
+
+        {/* Quick Actions */}
+        <section className="mb-10">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-alabaster">Command Actions</h2>
+            <span className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Command bar</span>
+          </div>
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6 }}
+            className="rounded-2xl bg-white/70 dark:bg-slate-900/55 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.35)] dark:shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)] p-5"
+          >
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {quickFeatures.map((feature) => {
+                const Icon = feature.icon
+                const isEmergency = feature.title === 'Emergency Alert'
+                return (
+                  <Link
+                    key={feature.title}
+                    to={feature.link}
+                    className="group"
+                  >
+                    <motion.div
+                      whileHover={{ y: -4 }}
+                      whileTap={{ scale: 0.98 }}
+                      className={`rounded-xl transition-all h-full cursor-pointer p-4 flex flex-col items-start text-left ${isEmergency
+                          ? 'bg-red-50/80 dark:bg-red-950/30 shadow-[0_12px_26px_-16px_rgba(220,38,38,0.6)] ring-1 ring-red-200/80 dark:ring-red-500/40'
+                          : 'bg-white/70 dark:bg-slate-900/60 shadow-sm'
+                        }`}
+                    >
+                      <div className={`text-${feature.color} mb-3`}>
+                        <Icon className="w-8 h-8" />
+                      </div>
+                      <h3 className={`text-sm font-semibold ${isEmergency ? 'text-red-700 dark:text-red-300' : 'text-slate-900 dark:text-alabaster'}`}>
+                        {feature.title}
+                      </h3>
+                      <p className="text-[11px] text-slate-600 dark:text-dusty mt-1">
+                        {feature.description}
+                      </p>
+                    </motion.div>
+                  </Link>
+                )
+              })}
+            </div>
+          </motion.div>
+        </section>
       </div>
     </div>
   )

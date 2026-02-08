@@ -1,9 +1,9 @@
-import React, { Suspense, useState, useEffect } from 'react'
+import React, { Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 
 // Components
-import IntroVideo from './components/IntroVideo'
+import AppShell from './components/AppShell'
 import Navbar from './components/Navbar'
 import ScrollToTop from './components/ScrollToTop'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -14,105 +14,153 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import Map from './pages/Map'
+import TestMap from './pages/TestMap'
+import BasicMap from './pages/BasicMap'
+import LeafletMap from './pages/LeafletMap'
+import EnhancedMap from './pages/EnhancedMap'
 import Emergency from './pages/Emergency'
 import Chat from './pages/Chat'
+import Vlogs from './pages/Vlogs'
+import Blog from './pages/Blog'
 import Profile from './pages/Profile'
 import FeatureDetails from './pages/FeatureDetails'
 import ForgotPassword from './pages/ForgotPassword'
+import Team from './pages/Team'
 
 // Context
 import { AuthProvider } from './contexts/AuthContext'
 import { SocketProvider } from './contexts/SocketContext'
+import { ThemeProvider, useTheme } from './contexts/ThemeContext'
 import ChatWidget from './components/ChatWidget'
 
-function App() {
-  const [loading, setLoading] = useState(true)
+// Safe loading fallback with timeout
+const LoadingFallback = () => {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="loading-dots">
+        <div></div>
+        <div></div>
+        <div></div>
+      </div>
+    </div>
+  )
+}
 
-  // Loading is controlled by the IntroVideo. We show the video and then hide it when it finishes.
-  if (loading) {
-    return <IntroVideo onFinish={() => setLoading(false)} />
-  }
+// Inner component to access theme context
+const AppContent = () => {
+  const { isDark } = useTheme()
 
   return (
-    <AuthProvider>
-      <SocketProvider>
-        <Router>
-          <ScrollToTop />
-          <div className="min-h-screen bg-dark-900 text-white relative overflow-hidden">
-            {/* Background Effects */}
-            <div className="fixed inset-0 bg-gradient-to-br from-dark-900 via-dark-800 to-purple-900/20 pointer-events-none" />
-            <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(0,255,255,0.1),transparent_50%)] pointer-events-none" />
-            
-            <Navbar />
-            
-            <main className="relative z-10">
-              <AnimatePresence mode="wait">
-                <Suspense fallback={
-                  <div className="flex items-center justify-center min-h-screen">
-                    <div className="loading-dots">
-                      <div></div>
-                      <div></div>
-                      <div></div>
-                    </div>
-                  </div>
-                }>
-                  <Routes>
-                    <Route path="/" element={<Home />} />
-                    <Route path="/feature/:slug" element={<FeatureDetails />} />
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/register" element={<Register />} />
-                    <Route 
-                      path="/dashboard" 
-                      element={
-                        <ProtectedRoute>
-                          <Dashboard />
-                        </ProtectedRoute>
-                      } 
-                    />
-                    <Route 
-                      path="/map" 
-                      element={
-                        <ProtectedRoute>
-                          <Map />
-                        </ProtectedRoute>
-                      } 
-                    />
-                    <Route 
-                      path="/emergency" 
-                      element={
-                        <ProtectedRoute>
-                          <Emergency />
-                        </ProtectedRoute>
-                      } 
-                    />
-                    <Route 
-                      path="/chat" 
-                      element={
-                        <ProtectedRoute>
-                          <Chat />
-                        </ProtectedRoute>
-                      } 
-                    />
-                    <Route path="/forgot-password" element={<ForgotPassword />} />
-                    {/* Chatbot page removed in favor of floating widget */}
-                    <Route 
-                      path="/profile" 
-                      element={
-                        <ProtectedRoute>
-                          <Profile />
-                        </ProtectedRoute>
-                      } 
-                    />
-                  </Routes>
-                </Suspense>
-              </AnimatePresence>
-            </main>
-            {/* Global floating chat widget (kept outside <main> so it overlays content) */}
-            <ChatWidget />
-          </div>
-        </Router>
-      </SocketProvider>
-    </AuthProvider>
+    <AppShell isDark={isDark}>
+      {/* Main App Content */}
+      <div className="min-h-screen transition-colors duration-300 relative"
+        style={{
+          backgroundColor: 'var(--bg-primary)',
+          color: 'var(--text-primary)',
+        }}
+      >
+        {/* Clean, professional background */}
+        <div className="fixed inset-0 pointer-events-none transition-colors duration-300" 
+          style={{ backgroundColor: 'var(--bg-primary)' }} 
+        />
+
+        <Navbar />
+
+        <main className="relative z-10">
+          <AnimatePresence mode="wait">
+            <Suspense fallback={<LoadingFallback />}>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/feature/:slug" element={<FeatureDetails />} />
+                <Route path="/team" element={<Team />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route
+                  path="/dashboard"
+                  element={
+                    <ProtectedRoute>
+                      <Dashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/map"
+                  element={
+                    <ProtectedRoute>
+                      <EnhancedMap />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/emergency"
+                  element={
+                    <ProtectedRoute>
+                      <Emergency />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/chat"
+                  element={
+                    <ProtectedRoute>
+                      <Chat />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/blogs"
+                  element={
+                    <ProtectedRoute>
+                      <Blog />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/vlogs"
+                  element={
+                    <ProtectedRoute>
+                      <Vlogs />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route
+                  path="/profile"
+                  element={
+                    <ProtectedRoute>
+                      <Profile />
+                    </ProtectedRoute>
+                  }
+                />
+              </Routes>
+            </Suspense>
+          </AnimatePresence>
+        </main>
+        
+        {/* Global floating chat widget */}
+        <ChatWidget />
+      </div>
+    </AppShell>
+  )
+}
+
+function App() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <SocketProvider>
+          <Router
+            future={{
+              v7_startTransition: true,
+              v7_relativeSplatPath: true
+            }}
+          >
+            <ScrollToTop />
+            <AppContent />
+          </Router>
+        </SocketProvider>
+      </AuthProvider>
+    </ThemeProvider>
   )
 }
 

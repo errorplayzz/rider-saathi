@@ -30,6 +30,16 @@ const userSchema = new mongoose.Schema({
     default: null
   },
   
+  // Two-Factor Authentication
+  twoFactorSecret: {
+    type: String,
+    select: false
+  },
+  twoFactorEnabled: {
+    type: Boolean,
+    default: false
+  },
+  
   // Rider specific fields
   bikeDetails: {
     make: String,
@@ -38,6 +48,16 @@ const userSchema = new mongoose.Schema({
     color: String,
     licensePlate: String
   },
+
+  // Social graph
+  friends: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  blockedUsers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   
   // Emergency contacts
   emergencyContacts: [{

@@ -3,10 +3,19 @@ import User from '../models/User.js'
 import EmergencyAlert from '../models/EmergencyAlert.js'
 import { ChatMessage, ChatRoom } from '../models/Chat.js'
 import { Reward } from '../models/Reward.js'
+import Message from '../models/Message.js'
+import Group from '../models/Group.js'
+import LiveLocation from '../models/LiveLocation.js'
+// CommonJS imports for models using module.exports
+import { createRequire } from 'module'
+const require = createRequire(import.meta.url)
+const FriendRequest = require('../models/FriendRequest.js')
+import { calculateDistance, filterRidersByProximity } from '../utils/geoUtils.js'
 
 // Store connected users
 const connectedUsers = new Map()
 const userRooms = new Map()
+const userLocations = new Map() // Track user locations for real-time updates
 
 export const handleSocketConnection = (io) => {
   // Authentication middleware
@@ -49,7 +58,204 @@ export const handleSocketConnection = (io) => {
       }
     })
 
-    // Location tracking
+    // ═══════════════════════════════════════════════════════════════
+    // REAL-TIME LOCATION TRACKING FOR MAP
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * User updates their location - triggers real-time map updates
+     * This replaces the old basic location-update event
+     */
+    socket.on('location:update', async (data) => {
+      try {
+        const { latitude, longitude, heading, speed, accuracy } = data
+
+        // Validate coordinates
+        if (!latitude || !longitude || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+          return socket.emit('location:error', { message: 'Invalid coordinates' })
+        }
+
+        // Update LiveLocation in database
+        let liveLocation = await LiveLocation.findOne({ userId: socket.userId })
+
+        if (liveLocation) {
+          liveLocation.location.coordinates = [longitude, latitude]
+          liveLocation.heading = heading || liveLocation.heading
+          liveLocation.speed = speed !== undefined ? speed : liveLocation.speed
+          liveLocation.accuracy = accuracy || liveLocation.accuracy
+          
+          // Auto-update status based on speed
+          if (speed !== undefined) {
+            liveLocation.status = speed > 5 ? 'moving' : speed > 0 ? 'stopped' : 'idle'
+          }
+          
+          await liveLocation.save()
+        } else {
+          liveLocation = await LiveLocation.create({
+            userId: socket.userId,
+            location: {
+              type: 'Point',
+              coordinates: [longitude, latitude]
+            },
+            heading: heading || 0,
+            speed: speed || 0,
+            accuracy: accuracy || 10,
+            status: speed > 5 ? 'moving' : 'idle'
+          })
+        }
+
+        // Store in memory for fast access
+        userLocations.set(socket.userId, {
+          lat: latitude,
+          lng: longitude,
+          heading: liveLocation.heading,
+          speed: liveLocation.speed,
+          status: liveLocation.status,
+          updatedAt: new Date()
+        })
+
+        // Get user's friends
+        const friendRequests = await FriendRequest.find({
+          $or: [
+            { senderId: socket.userId, status: 'accepted' },
+            { receiverId: socket.userId, status: 'accepted' }
+          ]
+        })
+
+        const friendIds = friendRequests.map(fr => 
+          fr.senderId.toString() === socket.userId 
+            ? fr.receiverId.toString() 
+            : fr.senderId.toString()
+        )
+
+        // Find nearby riders within 15km (max friend radius)
+        const nearbyRiders = await LiveLocation.findNearby(latitude, longitude, 15, {
+          excludeUserId: socket.userId,
+          visibleOnly: true
+        })
+
+        // Filter by friend/stranger rules
+        const visibleRiders = filterRidersByProximity(
+          liveLocation,
+          nearbyRiders,
+          friendIds
+        )
+
+        // Notify riders who can see this user
+        visibleRiders.forEach(rider => {
+          const riderConnection = connectedUsers.get(rider.userId.toString())
+          if (riderConnection) {
+            const isFriend = friendIds.includes(rider.userId.toString())
+            
+            // Send update to rider
+            io.to(riderConnection.socketId).emit('rider:location:update', {
+              userId: socket.userId,
+              location: {
+                lat: latitude,
+                lng: longitude
+              },
+              heading: liveLocation.heading,
+              speed: liveLocation.speed,
+              status: liveLocation.status,
+              distance: rider.distance,
+              isFriend: rider.isFriend
+            })
+          }
+        })
+
+        // Check for riders entering/exiting radius
+        await handleRiderProximityChanges(socket, liveLocation, friendIds, io)
+
+        socket.emit('location:updated', {
+          success: true,
+          location: { lat: latitude, lng: longitude },
+          nearbyCount: visibleRiders.length
+        })
+
+      } catch (error) {
+        console.error('Location update error:', error)
+        socket.emit('location:error', { message: 'Failed to update location' })
+      }
+    })
+
+    /**
+     * User requests nearby riders (initial load or refresh)
+     */
+    socket.on('location:get-nearby', async () => {
+      try {
+        const liveLocation = await LiveLocation.findOne({ userId: socket.userId })
+          .populate('userId', 'name email bike avatar isOnline')
+        
+        if (!liveLocation) {
+          return socket.emit('riders:nearby', { riders: [] })
+        }
+
+        const userLat = liveLocation.location.coordinates[1]
+        const userLng = liveLocation.location.coordinates[0]
+
+        // Get friends
+        const friendRequests = await FriendRequest.find({
+          $or: [
+            { senderId: socket.userId, status: 'accepted' },
+            { receiverId: socket.userId, status: 'accepted' }
+          ]
+        })
+
+        const friendIds = friendRequests.map(fr => 
+          fr.senderId.toString() === socket.userId 
+            ? fr.receiverId.toString() 
+            : fr.senderId.toString()
+        )
+
+        // Get nearby riders
+        const nearbyRiders = await LiveLocation.findNearby(userLat, userLng, 15, {
+          excludeUserId: socket.userId,
+          visibleOnly: true
+        })
+
+        const filteredRiders = filterRidersByProximity(
+          liveLocation,
+          nearbyRiders,
+          friendIds
+        )
+
+        socket.emit('riders:nearby', {
+          riders: filteredRiders,
+          total: filteredRiders.length,
+          friends: filteredRiders.filter(r => r.isFriend).length,
+          strangers: filteredRiders.filter(r => !r.isFriend).length
+        })
+
+      } catch (error) {
+        console.error('Get nearby riders error:', error)
+        socket.emit('location:error', { message: 'Failed to get nearby riders' })
+      }
+    })
+
+    /**
+     * User joins map tracking (starts receiving live updates)
+     */
+    socket.on('map:join', async () => {
+      socket.join('map_tracking')
+      console.log(`User ${socket.userId} joined map tracking`)
+      
+      // Send initial nearby riders
+      socket.emit('map:joined', { success: true })
+    })
+
+    /**
+     * User leaves map tracking
+     */
+    socket.on('map:leave', () => {
+      socket.leave('map_tracking')
+      console.log(`User ${socket.userId} left map tracking`)
+    })
+
+    // ═══════════════════════════════════════════════════════════════
+    // END LOCATION TRACKING
+    // ═══════════════════════════════════════════════════════════════
+
+    // Old location tracking (kept for backward compatibility with ride groups)
     socket.on('location-update', async (data) => {
       try {
         const { location, timestamp } = data
@@ -264,6 +470,22 @@ export const handleSocketConnection = (io) => {
       }
     })
 
+    // Leave chat room
+    socket.on('leave-chat-room', (roomId) => {
+      try {
+        if (!roomId) {
+          return socket.emit('error', { message: 'Room ID is required' })
+        }
+
+        console.log(`[Socket] User ${socket.userId} leaving room ${roomId}`)
+        socket.leave(`chat_${roomId}`)
+        socket.emit('left-chat-room', { roomId })
+      } catch (error) {
+        console.error('Leave chat room error:', error)
+        socket.emit('error', { message: 'Failed to leave chat room' })
+      }
+    })
+
     socket.on('send-message', async (data) => {
       try {
         const { roomId, message, messageType = 'text', media, location } = data
@@ -416,6 +638,289 @@ export const handleSocketConnection = (io) => {
       }
     })
 
+    // ========================================
+    // NEW CHAT SYSTEM SOCKET HANDLERS
+    // ========================================
+
+    // Direct messaging
+    socket.on('send-direct-message', async (data) => {
+      try {
+        const { recipientId, content, contentType = 'text', mediaUrl, location, replyTo } = data
+
+        // Create message
+        const message = new Message({
+          sender: socket.userId,
+          recipient: recipientId,
+          messageType: 'direct',
+          content,
+          contentType,
+          mediaUrl,
+          location,
+          replyTo,
+          status: 'sent'
+        })
+
+        await message.save()
+        await message.populate('sender', 'name avatar')
+
+        // Check if recipient is online
+        const recipientConnection = connectedUsers.get(recipientId)
+        
+        if (recipientConnection) {
+          // Recipient is online - deliver immediately
+          message.status = 'delivered'
+          message.deliveredAt = new Date()
+          await message.save()
+
+          io.to(recipientConnection.socketId).emit('new-direct-message', {
+            message: {
+              _id: message._id,
+              sender: message.sender,
+              content: message.content,
+              contentType: message.contentType,
+              mediaUrl: message.mediaUrl,
+              location: message.location,
+              replyTo: message.replyTo,
+              status: message.status,
+              createdAt: message.createdAt
+            }
+          })
+
+          // Send delivery confirmation to sender
+          socket.emit('message-delivered', {
+            messageId: message._id,
+            deliveredAt: message.deliveredAt
+          })
+        }
+
+        // Send acknowledgment to sender
+        socket.emit('message-sent', {
+          tempId: data.tempId,
+          messageId: message._id,
+          status: message.status,
+          timestamp: message.createdAt
+        })
+
+      } catch (error) {
+        console.error('Send direct message error:', error)
+        socket.emit('error', { message: 'Failed to send message' })
+      }
+    })
+
+    // Mark message as read
+    socket.on('mark-as-read', async (data) => {
+      try {
+        const { messageId } = data
+
+        const message = await Message.findById(messageId)
+        if (!message || message.recipient.toString() !== socket.userId) {
+          return socket.emit('error', { message: 'Message not found' })
+        }
+
+        await message.markAsRead()
+
+        // Notify sender about read receipt
+        const senderConnection = connectedUsers.get(message.sender.toString())
+        if (senderConnection) {
+          io.to(senderConnection.socketId).emit('message-read', {
+            messageId,
+            readAt: message.readAt,
+            readBy: socket.userId
+          })
+        }
+
+        socket.emit('message-marked-read', { messageId })
+
+      } catch (error) {
+        console.error('Mark as read error:', error)
+        socket.emit('error', { message: 'Failed to mark message as read' })
+      }
+    })
+
+    // Typing indicators for direct messages
+    socket.on('typing-direct', (data) => {
+      const { recipientId } = data
+      const recipientConnection = connectedUsers.get(recipientId)
+      
+      if (recipientConnection) {
+        io.to(recipientConnection.socketId).emit('user-typing-direct', {
+          userId: socket.userId,
+          isTyping: true
+        })
+      }
+    })
+
+    socket.on('stop-typing-direct', (data) => {
+      const { recipientId } = data
+      const recipientConnection = connectedUsers.get(recipientId)
+      
+      if (recipientConnection) {
+        io.to(recipientConnection.socketId).emit('user-typing-direct', {
+          userId: socket.userId,
+          isTyping: false
+        })
+      }
+    })
+
+    // Group messaging
+    socket.on('join-group', async (groupId) => {
+      try {
+        const group = await Group.findById(groupId)
+        if (!group) {
+          return socket.emit('error', { message: 'Group not found' })
+        }
+
+        if (!group.isMember(socket.userId)) {
+          return socket.emit('error', { message: 'Not a group member' })
+        }
+
+        socket.join(`group_${groupId}`)
+        
+        // Notify other members
+        socket.to(`group_${groupId}`).emit('user-joined-group', {
+          groupId,
+          userId: socket.userId,
+          timestamp: new Date()
+        })
+
+        socket.emit('joined-group', { groupId })
+      } catch (error) {
+        console.error('Join group error:', error)
+        socket.emit('error', { message: 'Failed to join group' })
+      }
+    })
+
+    socket.on('send-group-message', async (data) => {
+      try {
+        const { groupId, content, contentType = 'text', mediaUrl, location, replyTo } = data
+
+        const group = await Group.findById(groupId)
+        if (!group || !group.isMember(socket.userId)) {
+          return socket.emit('error', { message: 'Not authorized' })
+        }
+
+        const message = new Message({
+          sender: socket.userId,
+          group: groupId,
+          messageType: 'group',
+          content,
+          contentType,
+          mediaUrl,
+          location,
+          replyTo,
+          status: 'sent'
+        })
+
+        await message.save()
+        await message.populate('sender', 'name avatar')
+
+        // Update group last message
+        group.lastMessage = message._id
+        await group.save()
+
+        // Broadcast to all group members
+        io.to(`group_${groupId}`).emit('new-group-message', {
+          groupId,
+          message: {
+            _id: message._id,
+            sender: message.sender,
+            content: message.content,
+            contentType: message.contentType,
+            mediaUrl: message.mediaUrl,
+            location: message.location,
+            replyTo: message.replyTo,
+            createdAt: message.createdAt
+          }
+        })
+
+        socket.emit('message-sent', {
+          tempId: data.tempId,
+          messageId: message._id,
+          timestamp: message.createdAt
+        })
+
+      } catch (error) {
+        console.error('Send group message error:', error)
+        socket.emit('error', { message: 'Failed to send group message' })
+      }
+    })
+
+    // Typing indicators for groups
+    socket.on('typing-group', (data) => {
+      const { groupId } = data
+      socket.to(`group_${groupId}`).emit('user-typing-group', {
+        groupId,
+        userId: socket.userId,
+        isTyping: true
+      })
+    })
+
+    socket.on('stop-typing-group', (data) => {
+      const { groupId } = data
+      socket.to(`group_${groupId}`).emit('user-typing-group', {
+        groupId,
+        userId: socket.userId,
+        isTyping: false
+      })
+    })
+
+    // Leave group room
+    socket.on('leave-group', (groupId) => {
+      socket.leave(`group_${groupId}`)
+      socket.to(`group_${groupId}`).emit('user-left-group', {
+        groupId,
+        userId: socket.userId,
+        timestamp: new Date()
+      })
+    })
+
+    // Post reactions real-time
+    socket.on('post-reaction', (data) => {
+      const { postId, communityId, reactionType, action } = data
+      
+      // Broadcast to community members
+      socket.to(`community_${communityId}`).emit('post-reaction-update', {
+        postId,
+        userId: socket.userId,
+        reactionType,
+        action, // 'add' or 'remove'
+        timestamp: new Date()
+      })
+    })
+
+    // Comment notifications
+    socket.on('new-comment', (data) => {
+      const { postId, commentId, authorId, communityId } = data
+      
+      // Notify post author
+      const authorConnection = connectedUsers.get(authorId)
+      if (authorConnection && authorId !== socket.userId) {
+        io.to(authorConnection.socketId).emit('comment-notification', {
+          postId,
+          commentId,
+          commenterId: socket.userId,
+          timestamp: new Date()
+        })
+      }
+
+      // Broadcast to community
+      socket.to(`community_${communityId}`).emit('post-comment-update', {
+        postId,
+        commentId,
+        timestamp: new Date()
+      })
+    })
+
+    // Join community room for real-time updates
+    socket.on('join-community', (communityId) => {
+      socket.join(`community_${communityId}`)
+      socket.emit('joined-community', { communityId })
+    })
+
+    socket.on('leave-community', (communityId) => {
+      socket.leave(`community_${communityId}`)
+    })
+
     // Disconnect handling
     socket.on('disconnect', async () => {
       console.log(`User ${socket.userId} disconnected`)
@@ -453,8 +958,76 @@ export const handleSocketConnection = (io) => {
   })
 }
 
-// Helper function to calculate distance
-function calculateDistance(lat1, lon1, lat2, lon2) {
+/**
+ * Handle rider proximity changes (entering/exiting radius)
+ * Emits rider:enter and rider:exit events
+ */
+async function handleRiderProximityChanges(socket, currentLocation, friendIds, io) {
+  try {
+    const userId = socket.userId
+    const userLat = currentLocation.location.coordinates[1]
+    const userLng = currentLocation.location.coordinates[0]
+
+    // Get previous location from memory
+    const previousLocation = userLocations.get(userId + '_nearby') || new Set()
+    
+    // Get current nearby riders
+    const nearbyRiders = await LiveLocation.findNearby(userLat, userLng, 15, {
+      excludeUserId: userId,
+      visibleOnly: true
+    })
+
+    const filteredRiders = filterRidersByProximity(
+      currentLocation,
+      nearbyRiders,
+      friendIds
+    )
+
+    const currentNearby = new Set(filteredRiders.map(r => r.userId.toString()))
+
+    // Find riders who entered radius
+    currentNearby.forEach(riderId => {
+      if (!previousLocation.has(riderId)) {
+        const rider = filteredRiders.find(r => r.userId.toString() === riderId)
+        if (rider) {
+          socket.emit('rider:enter', {
+            rider: {
+              userId: rider.userId,
+              name: rider.name,
+              location: rider.location,
+              distance: rider.distance,
+              direction: rider.direction,
+              isFriend: rider.isFriend,
+              bike: rider.bike,
+              avatar: rider.avatar,
+              status: rider.status,
+              heading: rider.heading,
+              speed: rider.speed
+            }
+          })
+        }
+      }
+    })
+
+    // Find riders who exited radius
+    previousLocation.forEach(riderId => {
+      if (!currentNearby.has(riderId)) {
+        socket.emit('rider:exit', {
+          userId: riderId
+        })
+      }
+    })
+
+    // Update memory
+    userLocations.set(userId + '_nearby', currentNearby)
+
+  } catch (error) {
+    console.error('Proximity change handling error:', error)
+  }
+}
+
+// Helper function to calculate distance (legacy - kept for backward compatibility)
+function calculateDistanceLegacy(lat1, lon1, lat2, lon2) {
   const R = 6371e3 // Earth's radius in meters
   const φ1 = lat1 * Math.PI / 180
   const φ2 = lat2 * Math.PI / 180

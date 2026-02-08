@@ -159,6 +159,21 @@ router.post('/alert', auth, async (req, res) => {
       }
     })()
 
+    // Emit emergency alert via Socket.IO to all connected clients
+    if (req.io) {
+      req.io.emit('emergency-alert', {
+        id: alert._id,
+        user: req.user.id,
+        type: alert.type,
+        severity: alert.severity,
+        location: alert.location,
+        description: alert.description,
+        nearbyHospitals: alert.nearbyHospitals,
+        createdAt: alert.createdAt
+      })
+      console.log('🚨 Emergency alert broadcasted via Socket.IO:', alert.type)
+    }
+
     res.status(201).json({
       success: true,
       message: 'Emergency alert created successfully',

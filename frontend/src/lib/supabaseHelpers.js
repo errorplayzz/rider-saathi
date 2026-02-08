@@ -5,14 +5,30 @@ import { supabase } from './supabase'
 // ============================================
 
 export const getProfile = async (userId) => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single()
-  
-  if (error) throw error
-  return data
+  try {
+    // Create AbortController for proper timeout
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 2000) // 2 second timeout
+    
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .abortSignal(controller.signal)
+      .maybeSingle()
+    
+    clearTimeout(timeoutId) // Clear timeout if successful
+    
+    if (error) throw error
+    if (!data) return null
+    
+    return data
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('Database timeout')
+    }
+    throw err
+  }
 }
 
 export const updateProfile = async (userId, updates) => {

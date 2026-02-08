@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { 
+import {
   ExclamationTriangleIcon,
   PhoneIcon,
   MapPinIcon,
@@ -30,7 +30,7 @@ const Emergency = () => {
   const [showContactForm, setShowContactForm] = useState(false)
   const [newContact, setNewContact] = useState({ name: '', phone: '', relationship: '' })
   const [toast, setToast] = useState(null)
-  
+
   const { user, profile } = useAuth()
   const { socket, connected } = useSocket()
 
@@ -90,9 +90,9 @@ const Emergency = () => {
     })
 
     socket.on('responder-joined', (data) => {
-      setNearbyAlerts(prev => 
-        prev.map(alert => 
-          alert.id === data.alertId 
+      setNearbyAlerts(prev =>
+        prev.map(alert =>
+          alert.id === data.alertId
             ? { ...alert, respondersCount: (alert.respondersCount || 0) + 1 }
             : alert
         )
@@ -215,12 +215,12 @@ const Emergency = () => {
       // If still no loc, send a placeholder (backend prefers location but may accept nulls)
       const severity = type === 'medical' || type === 'fire' ? 'high' : 'medium'
       const description = `${type} emergency alert`
-      
+
       // Default location if not available
-      const alertLocation = loc || { 
-        longitude: 77.1025, 
-        latitude: 28.7041, 
-        address: 'Location unavailable' 
+      const alertLocation = loc || {
+        longitude: 77.1025,
+        latitude: 28.7041,
+        address: 'Location unavailable'
       }
 
       const alert = await createEmergencyAlert(
@@ -259,25 +259,42 @@ const Emergency = () => {
 
       // Show toast notification
       const emergencyType = emergencyTypes.find(e => e.type === type)
-      setToast({ 
-        message: `${emergencyType?.emoji || '🚨'} ${emergencyType?.title || type.toUpperCase()} alert sent! Help is on the way.`, 
-        type: 'success' 
+      setToast({
+        message: `${emergencyType?.emoji || '🚨'} ${emergencyType?.title || type.toUpperCase()} alert sent! Help is on the way.`,
+        type: 'success'
       })
       setTimeout(() => setToast(null), 4000)
-      
+
       // Refresh nearby alerts
       fetchNearbyAlerts()
-      
+
     } catch (error) {
       console.error('❌ Alert send error:', error)
-      // If backend returned validation error about location, suggest enabling location
-      const backendMessage = error.response?.data?.message
-      if (backendMessage) {
-        setToast({ message: backendMessage, type: 'warning' })
-        setTimeout(() => setToast(null), 5000)
+      
+      // Handle different error types
+      if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+        setToast({ 
+          message: '🔐 Please login again to send emergency alerts', 
+          type: 'warning' 
+        })
+      } else if (error.message?.includes('400')) {
+        setToast({ 
+          message: '📍 Location is required for emergency alerts. Please enable location services.', 
+          type: 'warning' 
+        })
+      } else if (error.message?.includes('network') || error.message?.includes('fetch')) {
+        setToast({ 
+          message: '📡 Network error. Please check your connection and try again.', 
+          type: 'error' 
+        })
       } else {
-        alert('Failed to send emergency alert. Please try again.')
+        setToast({ 
+          message: '❌ Failed to send emergency alert. Please try again.', 
+          type: 'error' 
+        })
       }
+      
+      setTimeout(() => setToast(null), 6000)
     }
   }
 
@@ -297,9 +314,9 @@ const Emergency = () => {
       })
 
       // Update local state
-      setNearbyAlerts(prev => 
-        prev.map(alert => 
-          alert.id === alertId 
+      setNearbyAlerts(prev =>
+        prev.map(alert =>
+          alert.id === alertId
             ? { ...alert, respondersCount: (alert.respondersCount || 0) + 1, responded: true }
             : alert
         )
@@ -310,12 +327,12 @@ const Emergency = () => {
         socket.emit('responder-joined', { alertId, responder: user })
       }
 
-  setToast({ message: '✅ Response sent! You are now heading to help.', type: 'success' })
-  setTimeout(() => setToast(null), 3000)
+      setToast({ message: '✅ Response sent! You are now heading to help.', type: 'success' })
+      setTimeout(() => setToast(null), 3000)
     } catch (error) {
       console.error('Response error:', error)
-  setToast({ message: 'Failed to respond to alert', type: 'warning' })
-  setTimeout(() => setToast(null), 3000)
+      setToast({ message: 'Failed to respond to alert', type: 'warning' })
+      setTimeout(() => setToast(null), 3000)
     } finally {
       setIsResponding(false)
     }
@@ -324,7 +341,7 @@ const Emergency = () => {
   const resolveAlert = async (alertId) => {
     try {
       await resolveEmergency(alertId)
-      
+
       setNearbyAlerts(prev => prev.filter(alert => alert.id !== alertId))
       if (activeAlert?.id === alertId) {
         setActiveAlert(null)
@@ -335,8 +352,8 @@ const Emergency = () => {
         socket.emit('alert-resolved', alertId)
       }
 
-  setToast({ message: '✅ Emergency resolved successfully!', type: 'success' })
-  setTimeout(() => setToast(null), 3000)
+      setToast({ message: '✅ Emergency resolved successfully!', type: 'success' })
+      setTimeout(() => setToast(null), 3000)
     } catch (error) {
       console.error('Resolve error:', error)
       const message = error.message || 'Failed to resolve alert'
@@ -355,14 +372,14 @@ const Emergency = () => {
       // Store emergency contacts in profile preferences
       const contacts = profile?.preferences?.emergencyContacts || []
       const updatedContacts = [...contacts, newContact]
-      
+
       // Update via AuthContext - need to import updateProfile from supabaseHelpers
       const { updateProfile: updateProfileHelper } = await import('../lib/supabaseHelpers')
       const preferences = profile?.preferences || {}
       await updateProfileHelper(user.id, {
         preferences: { ...preferences, emergencyContacts: updatedContacts }
       })
-      
+
       setEmergencyContacts(updatedContacts)
       setNewContact({ name: '', phone: '', relationship: '' })
       setShowContactForm(false)
@@ -379,104 +396,136 @@ const Emergency = () => {
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371e3 // Earth's radius in meters
-    const φ1 = lat1 * Math.PI/180
-    const φ2 = lat2 * Math.PI/180
-    const Δφ = (lat2-lat1) * Math.PI/180
-    const Δλ = (lon2-lon1) * Math.PI/180
+    const φ1 = lat1 * Math.PI / 180
+    const φ2 = lat2 * Math.PI / 180
+    const Δφ = (lat2 - lat1) * Math.PI / 180
+    const Δλ = (lon2 - lon1) * Math.PI / 180
 
-    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ/2) * Math.sin(Δλ/2)
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) *
+      Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 
     return R * c
   }
 
   return (
-    <div className="min-h-screen pt-20 px-4">
+    <div className="min-h-screen pt-20 px-4 pb-12">
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
+        {/* Top Status Banner */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8 text-center"
+          className="mb-12"
         >
-          <h1 className="text-3xl md:text-4xl font-orbitron font-bold text-white mb-2">
-            Emergency Center
-          </h1>
-          <p className="text-gray-300">
-            Get help quickly or assist others in need
-          </p>
-          <div className={`inline-flex items-center mt-4 px-4 py-2 rounded-full ${
-            connected ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
-          }`}>
-            <div className={`w-2 h-2 rounded-full mr-2 ${
-              connected ? 'bg-green-400' : 'bg-red-400'
-            }`} />
-            {connected ? 'Emergency services online' : 'Connection lost - some features unavailable'}
+          <div className="rounded-2xl bg-white/85 dark:bg-slate-900/70 shadow-[0_24px_60px_-30px_rgba(15,23,42,0.55)] dark:shadow-[0_30px_70px_-36px_rgba(0,0,0,0.9)] ring-1 ring-slate-200/70 dark:ring-slate-700/50 p-6 md:p-7">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Emergency Network</p>
+                <h1 className="text-3xl md:text-4xl font-semibold text-slate-900 dark:text-alabaster mt-2">
+                  {connected ? 'Active / Monitoring' : 'Monitoring Paused'}
+                </h1>
+                <p className="text-sm text-slate-600 dark:text-dusty mt-2">
+                  Immediate assistance and community safety network
+                </p>
+              </div>
+              <div className={`inline-flex items-center px-4 py-2 rounded-full text-xs uppercase tracking-[0.2em] border ${
+                connected
+                  ? 'border-green-200/70 text-green-600 bg-green-50/70 dark:border-green-500/30 dark:text-green-300 dark:bg-green-500/10'
+                  : 'border-slate-300/50 text-slate-500 bg-slate-100/60 dark:border-slate-600/40 dark:text-slate-300 dark:bg-slate-900/40'
+                }`}>
+                <span className={`w-2 h-2 rounded-full mr-2 ${connected ? 'bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.6)]' : 'bg-slate-400'}`} />
+                {connected ? 'Network Active' : 'Network Offline'}
+              </div>
+            </div>
           </div>
         </motion.div>
 
         {/* Active Alert */}
         {activeAlert && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
+            initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-red-900/20 border border-red-500/30 rounded-lg p-6 mb-8"
+            className="rounded-2xl bg-white/80 dark:bg-slate-900/70 border border-red-200/60 dark:border-red-500/30 shadow-[0_16px_40px_-26px_rgba(220,38,38,0.5)] p-6 mb-8"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex items-center space-x-4">
-                <div className="text-4xl animate-pulse">🚨</div>
+                <div className="text-3xl">🚨</div>
                 <div>
-                  <h3 className="text-xl font-bold text-red-400">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-alabaster">
                     Your Emergency Alert is Active
                   </h3>
-                  <p className="text-gray-300">
+                  <p className="text-sm text-slate-600 dark:text-dusty">
                     Alert ID: {activeAlert.id} • {activeAlert.respondersCount || 0} responders
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => resolveAlert(activeAlert.id)}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full transition-colors"
               >
                 Mark Resolved
               </button>
             </div>
           </motion.div>
         )}
-
-        {/* Emergency Actions */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="mb-8"
+          className="mb-12"
         >
-          <h2 className="text-2xl font-orbitron font-bold text-white mb-6">Send Emergency Alert</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-alabaster">Emergency Actions</h2>
+            <span className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Command zone</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
             {emergencyTypes.map((emergency) => {
               const Icon = emergency.icon
+              const isPrimary = emergency.type === 'accident'
               return (
                 <motion.button
                   key={emergency.type}
-                  whileHover={{ scale: 1.05, y: -5 }}
-                  whileTap={{ scale: 0.95 }}
+                  whileHover={{ y: -4 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={() => sendEmergencyAlert(emergency.type)}
                   // allow sending even if realtime socket is disconnected; backend will still receive the alert
                   disabled={!!activeAlert}
-                  className={`card-glow p-6 text-center transition-all duration-300 ${
-                    !!activeAlert ? 'opacity-50 cursor-not-allowed' : 'hover:border-red-500/50'
+                  className={`relative text-left transition-all duration-200 rounded-2xl ${
+                    isPrimary ? 'lg:col-span-2 p-7 min-h-[220px]' : 'p-5 min-h-[180px]'
+                  } ${!!activeAlert ? 'opacity-50 cursor-not-allowed' : ''} ${
+                    isPrimary
+                      ? 'bg-white/85 dark:bg-slate-900/70 shadow-[0_24px_60px_-32px_rgba(220,38,38,0.6)] border border-red-200/90 dark:border-red-500/50'
+                      : 'bg-white/75 dark:bg-slate-900/55 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.35)] dark:shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)]'
                   }`}
                 >
-                  <div className="text-4xl mb-4">{emergency.emoji}</div>
-                  <Icon className={`w-12 h-12 text-${emergency.color} mx-auto mb-4`} />
-                  <h3 className="text-lg font-semibold text-white mb-2">
-                    {emergency.title}
-                  </h3>
-                  <p className="text-sm text-gray-400">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">{emergency.type}</p>
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-alabaster mt-2">
+                        {emergency.title}
+                      </h3>
+                    </div>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ring-1 ${isPrimary ? 'bg-red-100/70 dark:bg-red-500/10 ring-red-200/80 dark:ring-red-500/40 shadow-[0_0_14px_rgba(220,38,38,0.25)]' : 'bg-slate-100/70 dark:bg-slate-800/60 ring-slate-200/70 dark:ring-slate-700/60'}`}>
+                      <Icon className={`w-6 h-6 ${emergency.type === 'accident' ? 'text-emergency-accident' :
+                        emergency.type === 'medical' ? 'text-emergency-medical' :
+                          emergency.type === 'fire' ? 'text-emergency-fire' :
+                            'text-dusty'
+                        }`} />
+                    </div>
+                  </div>
+
+                  <p className="text-sm text-slate-600 dark:text-dusty mt-3">
                     {emergency.description}
                   </p>
+
+                  <div className={`mt-5 inline-flex items-center px-4 py-2 rounded-full text-xs uppercase tracking-[0.2em] ${
+                    isPrimary
+                      ? 'bg-red-50/80 text-red-700 dark:bg-red-500/10 dark:text-red-300'
+                      : 'bg-slate-100/70 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300'
+                  }`}>
+                    {isPrimary ? 'Dispatch Accident Alert' : 'Dispatch Alert'}
+                  </div>
                 </motion.button>
               )
             })}
@@ -484,45 +533,49 @@ const Emergency = () => {
         </motion.div>
 
         {/* Toast Notification */}
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: -50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -50 }}
-            className={`fixed top-20 right-4 z-[100] max-w-md p-4 rounded-lg shadow-2xl border-l-4 ${
-              toast.type === 'success' 
-                ? 'bg-green-900/90 border-green-500 text-green-100' 
+        {
+          toast && (
+            <motion.div
+              initial={{ opacity: 0, y: -50 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -50 }}
+              className={`fixed top-20 right-4 z-[100] max-w-md p-4 rounded-lg shadow-2xl border-l-4 ${toast.type === 'success'
+                ? 'bg-green-900/90 border-green-500 text-green-100'
                 : toast.type === 'danger'
-                ? 'bg-red-900/90 border-red-500 text-red-100'
-                : 'bg-orange-900/90 border-orange-500 text-orange-100'
-            } backdrop-blur-md`}
-          >
-            <div className="flex items-center space-x-3">
-              <div className="flex-1 font-medium">{toast.message}</div>
-              <button
-                onClick={() => setToast(null)}
-                className="text-white/70 hover:text-white"
-              >
-                <XMarkIcon className="w-5 h-5" />
-              </button>
-            </div>
-          </motion.div>
-        )}
+                  ? 'bg-red-900/90 border-red-500 text-red-100'
+                  : 'bg-orange-900/90 border-orange-500 text-orange-100'
+                } backdrop-blur-md`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className="flex-1 font-medium">{toast.message}</div>
+                <button
+                  onClick={() => setToast(null)}
+                  className="text-white/70 hover:text-white"
+                >
+                  <XMarkIcon className="w-5 h-5" />
+                </button>
+              </div>
+            </motion.div>
+          )
+        }
 
         {/* Emergency Contacts & Nearby Alerts */}
-        <div className="grid lg:grid-cols-3 gap-8">
+        <div className="grid lg:grid-cols-3 gap-10">
           {/* Emergency Contacts */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="lg:col-span-1"
+            className="lg:col-span-1 rounded-2xl bg-white/60 dark:bg-slate-900/45 border border-slate-200/60 dark:border-slate-700/50 p-4"
           >
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-orbitron font-bold text-white">Emergency Contacts</h2>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-alabaster">Emergency Contacts</h2>
+                <p className="text-xs text-slate-500 dark:text-dusty mt-1">Who will be notified first</p>
+              </div>
               <button
                 onClick={() => setShowContactForm(!showContactForm)}
-                className="text-neon-cyan hover:text-neon-purple transition-colors"
+                className="text-accent hover:text-accent-hover transition-colors text-sm"
               >
                 + Add
               </button>
@@ -532,41 +585,41 @@ const Emergency = () => {
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
-                className="card-glow mb-6"
+                className="rounded-2xl bg-white/75 dark:bg-slate-900/55 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.35)] dark:shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)] p-5 mb-6"
               >
-                <h3 className="text-lg font-semibold text-white mb-4">Add Emergency Contact</h3>
+                <h3 className="text-base font-semibold text-slate-900 dark:text-alabaster mb-4">Add Emergency Contact</h3>
                 <div className="space-y-4">
                   <input
                     type="text"
                     placeholder="Full Name"
                     value={newContact.name}
-                    onChange={(e) => setNewContact({...newContact, name: e.target.value})}
-                    className="w-full px-4 py-2 bg-dark-600 border border-gray-600 rounded text-white"
+                    onChange={(e) => setNewContact({ ...newContact, name: e.target.value })}
+                    className="w-full px-4 py-2 bg-white/70 dark:bg-dusk border border-slate-200/70 dark:border-dusty/30 rounded text-slate-900 dark:text-alabaster focus:outline-none focus:ring-2 focus:ring-accent/50"
                   />
                   <input
                     type="tel"
                     placeholder="Phone Number"
                     value={newContact.phone}
-                    onChange={(e) => setNewContact({...newContact, phone: e.target.value})}
-                    className="w-full px-4 py-2 bg-dark-600 border border-gray-600 rounded text-white"
+                    onChange={(e) => setNewContact({ ...newContact, phone: e.target.value })}
+                    className="w-full px-4 py-2 bg-white/70 dark:bg-dusk border border-slate-200/70 dark:border-dusty/30 rounded text-slate-900 dark:text-alabaster focus:outline-none focus:ring-2 focus:ring-accent/50"
                   />
                   <input
                     type="text"
                     placeholder="Relationship (optional)"
                     value={newContact.relationship}
-                    onChange={(e) => setNewContact({...newContact, relationship: e.target.value})}
-                    className="w-full px-4 py-2 bg-dark-600 border border-gray-600 rounded text-white"
+                    onChange={(e) => setNewContact({ ...newContact, relationship: e.target.value })}
+                    className="w-full px-4 py-2 bg-white/70 dark:bg-dusk border border-slate-200/70 dark:border-dusty/30 rounded text-slate-900 dark:text-alabaster focus:outline-none focus:ring-2 focus:ring-accent/50"
                   />
                   <div className="flex space-x-2">
                     <button
                       onClick={addEmergencyContact}
-                      className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                      className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full transition-colors"
                     >
                       Add Contact
                     </button>
                     <button
                       onClick={() => setShowContactForm(false)}
-                      className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded transition-colors"
+                      className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-full transition-colors"
                     >
                       Cancel
                     </button>
@@ -575,15 +628,15 @@ const Emergency = () => {
               </motion.div>
             )}
 
-            <div className="space-y-3">
+            <div className="space-y-4">
               {emergencyContacts.length > 0 ? (
                 emergencyContacts.map((contact, index) => (
-                  <div key={index} className="card-glow">
+                  <div key={index} className="rounded-2xl bg-white/75 dark:bg-slate-900/55 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.35)] dark:shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)] p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-white font-semibold">{contact.name}</h3>
-                        <p className="text-sm text-gray-400">{contact.relationship}</p>
-                        <p className="text-sm text-neon-cyan">{contact.phone}</p>
+                        <h3 className="text-slate-900 dark:text-alabaster font-semibold">{contact.name}</h3>
+                        <p className="text-xs text-slate-500 dark:text-dusty">{contact.relationship}</p>
+                        <p className="text-sm text-accent">{contact.phone}</p>
                       </div>
                       <button
                         onClick={() => callEmergencyContact(contact.phone)}
@@ -595,12 +648,12 @@ const Emergency = () => {
                   </div>
                 ))
               ) : (
-                <div className="card-glow text-center py-8">
-                  <PhoneIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-400">No emergency contacts added</p>
+                <div className="rounded-2xl bg-white/75 dark:bg-slate-900/55 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.35)] dark:shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)] text-center py-9">
+                  <PhoneIcon className="w-12 h-12 text-slate-400 dark:text-dusty mx-auto mb-4" />
+                  <p className="text-slate-600 dark:text-dusty">No emergency contacts added</p>
                   <button
                     onClick={() => setShowContactForm(true)}
-                    className="text-neon-cyan hover:text-neon-purple mt-2"
+                    className="text-accent hover:text-accent-hover mt-2 text-sm"
                   >
                     Add your first contact
                   </button>
@@ -616,8 +669,11 @@ const Emergency = () => {
             transition={{ delay: 0.4 }}
             className="lg:col-span-2"
           >
-            <h2 className="text-2xl font-orbitron font-bold text-white mb-6">Nearby Emergencies</h2>
-            
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-alabaster">Nearby Emergencies</h2>
+              <span className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Live monitoring</span>
+            </div>
+
             {nearbyAlerts.length > 0 ? (
               <div className="space-y-4">
                 {nearbyAlerts.map((alert) => {
@@ -645,30 +701,32 @@ const Emergency = () => {
                   const alertOwnerId = alert.user?.id || alert.user?._id || alert.user
 
                   return (
-                    <div key={alert.id} className="card-glow">
+                    <div key={alert.id} className="rounded-2xl bg-white/70 dark:bg-slate-900/50 shadow-[0_8px_24px_-18px_rgba(15,23,42,0.3)] dark:shadow-[0_14px_32px_-24px_rgba(0,0,0,0.7)] px-7 py-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-4">
-                          <div className="text-3xl">
+                          <div className="w-11 h-11 rounded-full flex items-center justify-center bg-slate-100/80 dark:bg-slate-800/60 ring-1 ring-slate-200/70 dark:ring-slate-700/60 shadow-[0_0_10px_rgba(148,163,184,0.2)]">
+                            <span className="text-xl">
                             {alert.type === 'accident' ? '🚨' :
-                             alert.type === 'breakdown' ? '🛠️' :
-                             alert.type === 'medical' ? '🏥' :
-                             alert.type === 'fire' ? '🔥' : '⚠️'}
+                              alert.type === 'breakdown' ? '🛠️' :
+                                alert.type === 'medical' ? '🏥' :
+                                  alert.type === 'fire' ? '🔥' : '⚠️'}
+                            </span>
                           </div>
                           <div className="flex-1">
                             <div className="flex items-center space-x-2 mb-1">
-                              <h3 className="text-lg font-semibold text-white capitalize">
+                              <span className={`w-2 h-2 rounded-full ${alert.severity === 'high' ? 'bg-red-500' : alert.severity === 'medium' ? 'bg-orange-500' : 'bg-yellow-500'} shadow-[0_0_8px_rgba(239,68,68,0.35)]`} />
+                              <h3 className="text-lg font-semibold text-slate-900 dark:text-alabaster capitalize">
                                 {alert.type} Emergency
                               </h3>
-                              <span className={`px-2 py-1 text-xs rounded ${
-                                alert.severity === 'high' ? 'bg-red-600' :
+                              <span className={`px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] rounded-full text-white ${alert.severity === 'high' ? 'bg-red-600' :
                                 alert.severity === 'medium' ? 'bg-orange-600' :
-                                'bg-yellow-600'
-                              }`}>
+                                  'bg-yellow-600'
+                                }`}>
                                 {alert.severity}
                               </span>
 
                               {/* Show who reported the alert (rider name + optional avatar) */}
-                              <div className="flex items-center ml-3 text-sm text-gray-300">
+                              <div className="flex items-center ml-3 text-sm text-slate-500 dark:text-gray-300">
                                 {alert.user?.avatar ? (
                                   <img src={alert.user.avatar} alt={alert.user?.name || 'reporter'} className="w-6 h-6 rounded-full mr-2 object-cover" />
                                 ) : (
@@ -677,22 +735,22 @@ const Emergency = () => {
                                 <span className="truncate">{alert.user?.name || 'Anonymous'}</span>
                               </div>
                             </div>
-                            <div className="flex items-center space-x-4 text-sm text-gray-400">
+                            <div className="flex items-center space-x-4 text-sm text-slate-500 dark:text-gray-400">
                               <div className="flex items-center space-x-1">
-                                <MapPinIcon className="w-4 h-4" />
+                                <MapPinIcon className="w-4 h-4 text-slate-500 dark:text-slate-300" />
                                 <span>{Math.round(distance)}m away</span>
                               </div>
                               <div className="flex items-center space-x-1">
-                                <ClockIcon className="w-4 h-4" />
-                                  <span>{new Date(timestamp).toLocaleTimeString()}</span>
+                                <ClockIcon className="w-4 h-4 text-slate-500 dark:text-slate-300" />
+                                <span>{new Date(timestamp).toLocaleTimeString()}</span>
                               </div>
                               <div className="flex items-center space-x-1">
-                                <UserGroupIcon className="w-4 h-4" />
+                                <UserGroupIcon className="w-4 h-4 text-slate-500 dark:text-slate-300" />
                                 <span>{alert.respondersCount || 0} responding</span>
                               </div>
                             </div>
                             {alert.description && (
-                              <p className="text-sm text-gray-300 mt-2">
+                              <p className="text-sm text-slate-600 dark:text-gray-300 mt-2">
                                 {alert.description}
                               </p>
                             )}
@@ -700,7 +758,7 @@ const Emergency = () => {
                         </div>
                         <div className="flex space-x-2">
                           {alert.responded ? (
-                            <div className="flex items-center px-3 py-2 bg-green-600 text-white rounded">
+                            <div className="flex items-center px-3 py-2 bg-green-600 text-white rounded-full">
                               <CheckCircleIcon className="w-4 h-4 mr-1" />
                               Responding
                             </div>
@@ -708,9 +766,8 @@ const Emergency = () => {
                             <button
                               onClick={() => respondToAlert(alert.id)}
                               disabled={isResponding}
-                              className={`px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors ${
-                                isResponding ? 'opacity-50 cursor-not-allowed' : ''
-                              }`}
+                              className={`px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-colors ${isResponding ? 'opacity-50 cursor-not-allowed' : ''
+                                }`}
                             >
                               {isResponding ? 'Responding...' : 'Respond'}
                             </button>
@@ -718,7 +775,7 @@ const Emergency = () => {
                           {alertOwnerId && alertOwnerId.toString() === user?.id?.toString() && (
                             <button
                               onClick={() => resolveAlert(alert.id)}
-                              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full transition-colors"
                             >
                               Resolve
                             </button>
@@ -730,16 +787,16 @@ const Emergency = () => {
                 })}
               </div>
             ) : (
-              <div className="card-glow text-center py-12">
-                <CheckCircleIcon className="w-16 h-16 text-green-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-white mb-2">All Clear!</h3>
-                <p className="text-gray-400">No emergency alerts in your area</p>
+              <div className="rounded-2xl bg-white/70 dark:bg-slate-900/55 shadow-[0_14px_36px_-24px_rgba(34,197,94,0.5)] p-10 text-center border border-green-200/60 dark:border-green-500/30">
+                <CheckCircleIcon className="w-14 h-14 text-green-500 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-alabaster mb-2">All Clear</h3>
+                <p className="text-sm text-slate-600 dark:text-dusty">No emergency alerts in your area</p>
               </div>
             )}
           </motion.div>
         </div>
-      </div>
-    </div>
+      </div >
+    </div >
   )
 }
 

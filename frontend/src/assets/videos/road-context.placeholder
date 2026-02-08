@@ -1,0 +1,17 @@
+<!-- 
+PLACEHOLDER FILE
+
+This is a temporary placeholder. Replace with actual video file:
+- Filename: road-context.mp4
+- Type: Road POV / riding footage
+- Duration: 10-20 seconds (seamless loop)
+- Resolution: 1920x1080 or 1280x720
+- Size: Under 2MB recommended
+- Style: Slow motion, muted colors, subtle movement
+
+Once replaced, the video will automatically appear as background
+in the "Trusted Rider Safety Platform" section.
+
+To test without video, this file can remain as-is.
+The component will gracefully handle missing video files.
+-->
