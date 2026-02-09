@@ -25,6 +25,7 @@ import Blog from './pages/Blog'
 import Profile from './pages/Profile'
 import FeatureDetails from './pages/FeatureDetails'
 import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
 import Team from './pages/Team'
 
 // Context
@@ -124,6 +125,7 @@ const AppContent = () => {
                   }
                 />
                 <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
                 <Route
                   path="/profile"
                   element={
