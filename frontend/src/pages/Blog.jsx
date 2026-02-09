@@ -30,6 +30,7 @@ const Blog = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [sortBy, setSortBy] = useState('latest')
+  const [createError, setCreateError] = useState('')
   
   // Create/Edit form state
   const [blogForm, setBlogForm] = useState({
@@ -48,8 +49,8 @@ const Blog = () => {
     { id: 'bike-reviews', name: 'Bike Reviews', icon: '⭐' },
     { id: 'maintenance', name: 'Maintenance', icon: '🔧' },
     { id: 'safety', name: 'Safety & Gear', icon: '🦺' },
-    { id: 'community', name: 'Community Events', icon: '🎉' },
-    { id: 'news', name: 'Rider News', icon: '📰' }
+    { id: 'community-events', name: 'Community Events', icon: '🎉' },
+    { id: 'rider-news', name: 'Rider News', icon: '📰' }
   ]
 
   // Load blogs from API
@@ -199,7 +200,23 @@ const Blog = () => {
 
   const handleCreateBlog = async (e) => {
     e.preventDefault()
+    setCreateError('')
+
+    if (!blogForm.title.trim() || blogForm.title.trim().length < 5) {
+      setCreateError('Title must be at least 5 characters.')
+      return
+    }
+
+    if (!blogForm.content.trim() || blogForm.content.trim().length < 50) {
+      setCreateError('Content must be at least 50 characters.')
+      return
+    }
     try {
+      const tagsArray = blogForm.tags
+        .split(',')
+        .map(tag => tag.trim().toLowerCase())
+        .filter(Boolean)
+
       const response = await fetch('/api/blogs', {
         method: 'POST',
         headers: {
@@ -210,7 +227,7 @@ const Blog = () => {
           title: blogForm.title,
           content: blogForm.content,
           category: blogForm.category,
-          tags: blogForm.tags
+          tags: tagsArray
         })
       })
 
@@ -220,13 +237,15 @@ const Blog = () => {
         setShowCreateForm(false)
         setBlogForm({ title: '', content: '', category: 'riding-tips', tags: '', image: null })
       } else {
-        const errorData = await response.json()
-        console.error('Failed to create blog:', errorData.message)
-        alert('Failed to create blog. Please try again.')
+        const errorData = await response.json().catch(() => null)
+        const firstError = errorData?.errors?.[0]?.msg
+        const message = firstError || errorData?.message || 'Failed to create blog. Please try again.'
+        console.error('Failed to create blog:', message)
+        setCreateError(message)
       }
     } catch (error) {
       console.error('Failed to create blog:', error)
-      alert('Failed to create blog. Please check your connection and try again.')
+      setCreateError('Failed to create blog. Please check your connection and try again.')
     }
   }
 
@@ -287,7 +306,7 @@ const Blog = () => {
 
         {/* Filters and Search */}
         <div className={`${cardStyle} rounded-xl p-6 mb-8 backdrop-blur-sm`}>
-          <div className="flex flex-col lg:flex-row gap-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(240px,320px)_1fr_minmax(150px,200px)] lg:items-start">
             {/* Search */}
             <div className="flex-1 relative">
               <MagnifyingGlassIcon className={`absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 ${textSecondary}`} />
@@ -301,7 +320,7 @@ const Blog = () => {
             </div>
 
             {/* Category Filter */}
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 items-start">
               {categories.map(category => (
                 <button
                   key={category.id}
@@ -321,7 +340,7 @@ const Blog = () => {
             </div>
 
             {/* Sort */}
-            <div className="relative">
+            <div className="relative lg:justify-self-end">
               <FunnelIcon className={`absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 ${textSecondary}`} />
               <select
                 value={sortBy}
@@ -504,6 +523,11 @@ const Blog = () => {
                 </div>
 
                 <div className="space-y-6">
+                  {createError && (
+                    <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg text-sm">
+                      {createError}
+                    </div>
+                  )}
                   <div>
                     <label className={`block text-sm font-medium ${textPrimary} mb-2`}>
                       Blog Title *
