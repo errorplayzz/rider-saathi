@@ -66,16 +66,16 @@ const ResetPassword = () => {
 
   return (
     <div className="min-h-screen relative flex items-center justify-center px-4 py-20 overflow-hidden">
-                    {checking && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="bg-slate-800/50 border border-slate-700/50 text-slate-300 px-4 py-3 rounded-xl text-sm"
-                      >
-                        Validating reset link...
-                      </motion.div>
-                    )}
+      <div className="absolute inset-0 -z-10">
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 dark:from-slate-950 dark:via-blue-950/30 dark:to-slate-950" />
+        <motion.div
+          animate={{
+            background: [
+              'radial-gradient(circle at 20% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 50%)',
+              'radial-gradient(circle at 80% 50%, rgba(14, 165, 233, 0.08) 0%, transparent 50%)',
+              'radial-gradient(circle at 20% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 50%)'
+            ]
+          }}
           transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}
           className="absolute inset-0"
         />
