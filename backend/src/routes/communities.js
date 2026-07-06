@@ -2,13 +2,14 @@ import express from 'express';
 import { protect } from '../middleware/auth.js';
 import Community from '../models/Community.js';
 import Post from '../models/Post.js';
+import User from '../models/User.js';
 
 const router = express.Router();
 
 // Create community
 router.post('/', protect, async (req, res) => {
   try {
-    const { name, description, type, tags, rules, settings } = req.body;
+    const { name, description, type, tags, rules, settings, visibility = 'public', state } = req.body;
 
     if (!name) {
       return res.status(400).json({ success: false, error: 'Community name is required' });
@@ -18,6 +19,8 @@ router.post('/', protect, async (req, res) => {
       name,
       description,
       type,
+      visibility,
+      state,
       tags,
       rules,
       settings,
@@ -40,6 +43,9 @@ router.get('/', protect, async (req, res) => {
   try {
     const { type, search } = req.query;
 
+    const currentUser = await User.findById(req.user._id).select('state');
+    const userState = (currentUser?.state || '').toLowerCase().trim();
+
     const query = { isActive: true };
     
     if (type) {
@@ -50,12 +56,41 @@ router.get('/', protect, async (req, res) => {
       query.$text = { $search: search };
     }
 
+    // Public communities are discoverable by state; private communities only for members.
+    query.$or = [
+      {
+        visibility: 'public',
+        $or: [
+          { state: { $exists: false } },
+          { state: null },
+          { state: '' },
+          ...(userState ? [{ state: { $regex: `^${userState}$`, $options: 'i' } }] : [])
+        ]
+      },
+      {
+        visibility: 'private',
+        members: req.user._id
+      }
+    ];
+
     const communities = await Community.find(query)
       .populate('creator', 'name avatar')
-      .sort({ 'stats.totalMembers': -1, lastActivity: -1 })
-      .limit(50);
+      .limit(100);
 
-    res.json({ success: true, data: communities });
+    const now = Date.now();
+    const ranked = communities
+      .map((c) => {
+        const recentBoost = c.lastActivity ? Math.max(0, 30 - Math.floor((now - new Date(c.lastActivity).getTime()) / (1000 * 60 * 60 * 24))) : 0;
+        const rankScore = (c.stats?.totalMembers || 0) * 5 + (c.stats?.totalPosts || 0) * 2 + (c.verified ? 50 : 0) + recentBoost;
+        return {
+          ...c.toObject(),
+          rankScore
+        };
+      })
+      .sort((a, b) => b.rankScore - a.rankScore)
+      .slice(0, 50);
+
+    res.json({ success: true, data: ranked });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

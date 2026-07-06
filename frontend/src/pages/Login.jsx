@@ -81,16 +81,16 @@ const Login = () => {
   }
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center px-4 py-20 overflow-hidden">
+    <div className="min-h-screen relative flex items-center justify-center px-4 pt-32 pb-20">
       {/* Animated Background Gradient */}
-      <div className="absolute inset-0 -z-10">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 dark:from-slate-950 dark:via-blue-950/30 dark:to-slate-950" />
+      <div className="fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 dark:from-slate-950 dark:via-orange-950/30 dark:to-slate-950" />
         <motion.div
           animate={{
             background: [
-              'radial-gradient(circle at 20% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 50%)',
+              'radial-gradient(circle at 20% 50%, rgba(255, 138, 61, 0.08) 0%, transparent 50%)',
               'radial-gradient(circle at 80% 50%, rgba(14, 165, 233, 0.08) 0%, transparent 50%)',
-              'radial-gradient(circle at 20% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 50%)'
+              'radial-gradient(circle at 20% 50%, rgba(255, 138, 61, 0.08) 0%, transparent 50%)'
             ]
           }}
           transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}
@@ -107,14 +107,7 @@ const Login = () => {
           transition={{ duration: 0.5 }}
           className="text-center space-y-2"
         >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
-            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 backdrop-blur-xl border border-cyan-500/20 mb-4"
-          >
-            <ShieldCheckIcon className="w-8 h-8 text-cyan-400" />
-          </motion.div>
+
           <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
             Welcome Back
           </h1>
@@ -131,12 +124,12 @@ const Login = () => {
         >
           <div className="relative group">
             {/* Glow Effect */}
-            <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500/20 to-blue-600/20 rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-500" />
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-orange-600/20 rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-500" />
             
             {/* Glass Card */}
             <form
               onSubmit={handleSubmit}
-              className="relative bg-slate-900/40 dark:bg-slate-950/40 backdrop-blur-xl border border-slate-800/50 rounded-2xl p-8 shadow-2xl space-y-6"
+              className="relative bg-slate-900/40 dark:bg-slate-950/40 backdrop-blur-none border border-slate-800/50 rounded-2xl p-8 shadow-2xl space-y-6"
             >
               {/* Success Message */}
               <AnimatePresence>
@@ -179,7 +172,7 @@ const Login = () => {
                 </label>
                 <div className="relative group">
                   <EnvelopeIcon className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors duration-200 ${
-                    focusedField === 'email' ? 'text-cyan-400' : 'text-slate-500'
+                    focusedField === 'email' ? 'text-orange-400' : 'text-slate-500'
                   }`} />
                   <input
                     id="email"
@@ -190,7 +183,7 @@ const Login = () => {
                     onChange={handleChange}
                     onFocus={() => setFocusedField('email')}
                     onBlur={() => setFocusedField(null)}
-                    className="w-full pl-12 pr-4 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200"
+                    className="w-full pl-12 pr-4 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200"
                     placeholder="your.email@example.com"
                   />
                 </div>
@@ -206,7 +199,7 @@ const Login = () => {
                 </label>
                 <div className="relative group">
                   <LockClosedIcon className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors duration-200 ${
-                    focusedField === 'password' ? 'text-cyan-400' : 'text-slate-500'
+                    focusedField === 'password' ? 'text-orange-400' : 'text-slate-500'
                   }`} />
                   <input
                     id="password"
@@ -217,7 +210,7 @@ const Login = () => {
                     onChange={handleChange}
                     onFocus={() => setFocusedField('password')}
                     onBlur={() => setFocusedField(null)}
-                    className="w-full pl-12 pr-12 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200"
+                    className="w-full pl-12 pr-12 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200"
                     placeholder="Enter your password"
                   />
                   <motion.button
@@ -225,7 +218,7 @@ const Login = () => {
                     onClick={() => setShowPassword(!showPassword)}
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-400 transition-colors"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-orange-400 transition-colors"
                   >
                     {showPassword ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
                   </motion.button>
@@ -237,13 +230,13 @@ const Login = () => {
                 <label className="flex items-center gap-2 cursor-pointer group">
                   <input
                     type="checkbox"
-                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-cyan-500 focus:ring-cyan-500/20 focus:ring-2 transition-all"
+                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/20 focus:ring-2 transition-all"
                   />
                   <span className="text-slate-400 group-hover:text-slate-300 transition-colors">Remember me</span>
                 </label>
                 <Link 
                   to="/forgot-password" 
-                  className="text-cyan-400 hover:text-cyan-300 transition-colors"
+                  className="text-orange-400 hover:text-orange-300 transition-colors"
                 >
                   Forgot password?
                 </Link>
@@ -256,11 +249,11 @@ const Login = () => {
                 whileHover={{ scale: loading ? 1 : 1.02, y: loading ? 0 : -2 }}
                 whileTap={{ scale: loading ? 1 : 0.98 }}
                 className={`w-full relative group overflow-hidden rounded-xl py-3.5 font-semibold transition-all duration-200 ${
-                  loading ? 'opacity-60 cursor-not-allowed' : 'shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/40'
+                  loading ? 'opacity-60 cursor-not-allowed' : 'shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40'
                 }`}
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-blue-600" />
-                <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-orange-600" />
+                <div className="absolute inset-0 bg-gradient-to-r from-orange-400 to-orange-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
                 <span className="relative text-white flex items-center justify-center gap-2">
                   {loading ? (
                     <>
@@ -290,7 +283,7 @@ const Login = () => {
             Don't have an account?{' '}
             <Link 
               to="/register" 
-              className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
+              className="text-orange-400 hover:text-orange-300 font-medium transition-colors"
             >
               Create one now
             </Link>

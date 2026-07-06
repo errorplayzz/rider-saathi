@@ -37,11 +37,11 @@ const GradientMesh = () => {
 
         // Color palette for the mesh
         const colors = [
-            { r: 14, g: 165, b: 233 },    // sky blue
-            { r: 94, g: 234, b: 212 },    // teal
-            { r: 168, g: 85, b: 247 },    // purple
-            { r: 59, g: 130, b: 246 },    // blue
-            { r: 6, g: 182, b: 212 },     // cyan
+            { r: 255, g: 106, b: 0 },
+            { r: 255, g: 61, b: 0 },
+            { r: 255, g: 138, b: 61 },
+            { r: 255, g: 125, b: 48 },
+            { r: 24, g: 24, b: 28 },
         ]
 
         // Create gradient mesh points
@@ -73,7 +73,7 @@ const GradientMesh = () => {
             timeRef.current += 1
 
             // Fill with dark background
-            ctx.fillStyle = '#0a0f1a'
+            ctx.fillStyle = '#050505'
             ctx.fillRect(0, 0, width, height)
 
             // Update and draw gradient blobs
@@ -106,7 +106,7 @@ const GradientMesh = () => {
             animate()
         } else {
             // Static render for reduced motion
-            ctx.fillStyle = '#0a0f1a'
+            ctx.fillStyle = '#050505'
             ctx.fillRect(0, 0, width, height)
             meshPoints.forEach(point => {
                 const gradient = ctx.createRadialGradient(

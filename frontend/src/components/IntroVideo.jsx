@@ -84,7 +84,7 @@ const IntroVideo = ({ onFinish }) => {
       <button
         aria-label="Skip intro"
         onClick={() => onFinish && onFinish()}
-        className="absolute top-6 right-6 bg-black/40 text-white px-3 py-1 rounded-md text-sm backdrop-blur-sm"
+        className="absolute top-6 right-6 bg-black/40 text-white px-3 py-1 rounded-md text-sm backdrop-blur-none"
       >
         Skip
       </button>
@@ -93,3 +93,4 @@ const IntroVideo = ({ onFinish }) => {
 }
 
 export default IntroVideo
+

@@ -65,7 +65,7 @@ const ParticleWaves = () => {
             ctx.clearRect(0, 0, width, height)
 
             // Draw connecting lines and particles
-            ctx.strokeStyle = 'rgba(94, 234, 212, 0.2)'
+            ctx.strokeStyle = 'rgba(255, 106, 0, 0.2)'
             ctx.lineWidth = 1
 
             particlesRef.current.forEach((particle, index) => {
@@ -97,7 +97,7 @@ const ParticleWaves = () => {
                     ctx.beginPath()
                     ctx.moveTo(particle.x, y)
                     ctx.lineTo(nextParticle.x, nextY)
-                    ctx.strokeStyle = `rgba(94, 234, 212, ${0.15 * scale})`
+                    ctx.strokeStyle = `rgba(255, 106, 0, ${0.15 * scale})`
                     ctx.stroke()
                 }
 
@@ -105,13 +105,13 @@ const ParticleWaves = () => {
                 const particleSize = particle.size * scale
                 ctx.beginPath()
                 ctx.arc(particle.x, y, particleSize, 0, Math.PI * 2)
-                ctx.fillStyle = `rgba(56, 189, 248, ${0.6 * scale})`
+                ctx.fillStyle = `rgba(255, 61, 0, ${0.6 * scale})`
                 ctx.fill()
 
                 // Add glow effect
                 ctx.beginPath()
                 ctx.arc(particle.x, y, particleSize * 3, 0, Math.PI * 2)
-                ctx.fillStyle = `rgba(94, 234, 212, ${0.1 * scale})`
+                ctx.fillStyle = `rgba(255, 106, 0, ${0.1 * scale})`
                 ctx.fill()
             })
 

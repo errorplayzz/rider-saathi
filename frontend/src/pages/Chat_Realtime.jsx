@@ -368,7 +368,7 @@ export default function Chat() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-black">
+      <div className="min-h-screen bg-gradient-to-br from-orange-900 via-orange-900 to-black">
         <Navbar />
         <div className="flex items-center justify-center h-screen">
           <div className="text-white text-xl">Loading...</div>
@@ -378,18 +378,18 @@ export default function Chat() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-black">
+    <div className="min-h-screen bg-gradient-to-br from-orange-900 via-orange-900 to-black">
       <Navbar />
       
       <div className="container mx-auto px-4 pt-24 pb-8">
         <div className="flex gap-4 h-[calc(100vh-8rem)]">
           {/* Rooms Sidebar */}
-          <div className="w-80 bg-white/10 backdrop-blur-lg rounded-xl p-4 overflow-y-auto">
+          <div className="w-80 bg-white/10 backdrop-blur-none rounded-xl p-4 overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-white">Chat Rooms</h2>
               <button
                 onClick={() => setShowNewRoomModal(true)}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition"
+                className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg transition"
               >
                 New Room
               </button>
@@ -428,7 +428,7 @@ export default function Chat() {
                   onClick={() => setSelectedRoom(room)}
                   className={`w-full text-left p-3 rounded-lg transition ${
                     selectedRoom?.id === room.id
-                      ? 'bg-blue-500/30 border border-blue-400'
+                      ? 'bg-orange-500/30 border border-orange-400'
                       : 'bg-white/5 hover:bg-white/10'
                   }`}
                 >
@@ -451,7 +451,7 @@ export default function Chat() {
           </div>
 
           {/* Chat Area */}
-          <div className="flex-1 bg-white/10 backdrop-blur-lg rounded-xl flex flex-col">
+          <div className="flex-1 bg-white/10 backdrop-blur-none rounded-xl flex flex-col">
             {selectedRoom ? (
               <>
                 {/* Chat Header */}
@@ -460,7 +460,7 @@ export default function Chat() {
                   <div className="text-white/60 text-sm">
                     {selectedRoom.room_participants?.length || 0} members
                     {typingUsersText && (
-                      <span className="ml-2 text-blue-300">
+                      <span className="ml-2 text-orange-300">
                         • {typingUsersText} {typingUsers.length === 1 ? 'is' : 'are'} typing...
                       </span>
                     )}
@@ -479,7 +479,7 @@ export default function Chat() {
                       <div
                         className={`max-w-[70%] rounded-lg p-3 ${
                           message.sender_id === user.id
-                            ? 'bg-blue-500 text-white'
+                            ? 'bg-orange-500 text-white'
                             : 'bg-white/20 text-white'
                         } ${message.isPending ? 'opacity-60' : ''} ${
                           message.isFailed ? 'bg-red-500/50' : ''
@@ -540,7 +540,7 @@ export default function Chat() {
                     <div className="mb-2">
                       <div className="w-full bg-white/10 rounded-full h-2">
                         <div
-                          className="bg-blue-500 h-2 rounded-full transition-all"
+                          className="bg-orange-500 h-2 rounded-full transition-all"
                           style={{ width: `${uploadProgress}%` }}
                         ></div>
                       </div>
@@ -567,14 +567,14 @@ export default function Chat() {
                       value={newMessage}
                       onChange={handleTyping}
                       placeholder="Type a message..."
-                      className="flex-1 bg-white/10 text-white placeholder-white/50 px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 bg-white/10 text-white placeholder-white/50 px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                       disabled={isUploading}
                     />
                     
                     <button
                       type="submit"
                       disabled={isUploading || (!newMessage.trim() && !selectedFile)}
-                      className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-500 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg transition"
+                      className="bg-orange-500 hover:bg-orange-600 disabled:bg-gray-500 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg transition"
                     >
                       Send
                     </button>
@@ -601,7 +601,7 @@ export default function Chat() {
                 value={newRoomName}
                 onChange={(e) => setNewRoomName(e.target.value)}
                 placeholder="Room name..."
-                className="w-full bg-white/10 text-white placeholder-white/50 px-4 py-2 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-white/10 text-white placeholder-white/50 px-4 py-2 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-orange-500"
                 autoFocus
               />
               <div className="flex gap-2">
@@ -618,7 +618,7 @@ export default function Chat() {
                 <button
                   type="submit"
                   disabled={!newRoomName.trim()}
-                  className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-500 text-white px-4 py-2 rounded-lg transition"
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-500 text-white px-4 py-2 rounded-lg transition"
                 >
                   Create
                 </button>
@@ -630,3 +630,4 @@ export default function Chat() {
     </div>
   );
 }
+

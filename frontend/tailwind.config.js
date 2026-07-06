@@ -8,69 +8,237 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Strict Black & White Color System
-        ink: 'var(--surface-l1)',          // Page background
-        prussian: 'var(--surface-l2)',     // Section/Sidebar
-        dusk: 'var(--surface-l3)',         // Cards/Panels
-        dusty: 'var(--text-secondary)',    // Secondary text
-        alabaster: 'var(--text-heading)',  // Primary text/Headings
+        // Ride Mode surface + text tokens
+        ink: 'var(--surface-l1)',
+        prussian: 'var(--surface-l2)',
+        dusk: 'var(--surface-l3)',
+        dusty: 'var(--text-secondary)',
+        alabaster: 'var(--text-heading)',
 
-        // Surface System (Monochrome Layers)
         surface: {
-          l1: 'var(--surface-l1)',  // Deep background
-          l2: 'var(--surface-l2)',  // Containers
-          l3: 'var(--surface-l3)',  // Cards
-          l4: 'var(--surface-l4)',  // Elements
+          l1: 'var(--surface-l1)',
+          l2: 'var(--surface-l2)',
+          l3: 'var(--surface-l3)',
+          l4: 'var(--surface-l4)',
         },
 
-        // No accent color - pure monochrome
         accent: 'var(--accent-color)',
         'accent-hover': 'var(--accent-active)',
 
-        // Emergency colors (monochrome greys only)
         emergency: {
-          critical: '#111111',    // Darkest grey - Highest urgency
-          high: '#222222',        // Very dark grey - High attention
-          medium: '#444444',      // Medium grey - Requires action
-          low: '#666666',         // Light grey - Non-critical
-          // Specific emergency types mapped to severity levels
-          accident: '#CC0000',    // Red for accidents
-          medical: '#DC143C',     // Crimson for medical
-          fire: '#FF4500',        // Orange-red for fire
-          breakdown: '#666666',   // Grey for low-priority breakdown
+          critical: '#FF3D00',
+          high: '#FF4D00',
+          medium: '#FF6A00',
+          low: '#FF9D5C',
+          accident: '#FF3D00',
+          medical: '#FF3D00',
+          fire: '#FF4D00',
+          breakdown: '#FF8A3D',
         },
 
-        // Legacy dark colors (monochrome only)
         dark: {
-          900: '#0E0E0E',
-          800: '#111111',
+          900: '#0A0A0A',
+          800: '#121212',
           700: '#1A1A1A',
           600: '#222222',
         },
 
-        // Legacy light colors (monochrome only)
         light: {
-          100: '#FFFFFF',
-          200: '#FAFAFA',
-          300: '#F5F5F5',
-          400: '#F0F0F0',
+          100: '#F5F5F5',
+          200: '#EDEDED',
+          300: '#D9D9D9',
+          400: '#C4C4C4',
         },
 
-        // Remove all neon/colored references
+        // Re-map default orange scale to muted warm bronze (sample-like tone).
+        orange: {
+          50: '#F4F1EE',
+          100: '#E9E3DC',
+          200: '#D2C7BA',
+          300: '#B8A899',
+          400: '#9D8B7A',
+          500: '#826F5F',
+          600: '#6E5F53',
+          700: '#594C43',
+          800: '#433932',
+          900: '#2F2924',
+          950: '#1A1714',
+        },
+
+        // Neutralize default blue-tinted slate scale for Ride Mode consistency.
+        slate: {
+          50: '#FAFAFA',
+          100: '#F5F5F5',
+          200: '#E5E5E5',
+          300: '#D4D4D4',
+          400: '#A3A3A3',
+          500: '#737373',
+          600: '#525252',
+          700: '#404040',
+          800: '#262626',
+          900: '#171717',
+          950: '#0A0A0A',
+        },
+
+        // Override cool palettes to warm Ride Mode palette so existing classes stay intact.
+        cyan: {
+          50: '#F4F1EE',
+          100: '#E9E3DC',
+          200: '#D2C7BA',
+          300: '#B8A899',
+          400: '#9D8B7A',
+          500: '#826F5F',
+          600: '#6E5F53',
+          700: '#594C43',
+          800: '#433932',
+          900: '#2F2924',
+          950: '#1A1714',
+        },
+        sky: {
+          50: '#F4F1EE',
+          100: '#E9E3DC',
+          200: '#D2C7BA',
+          300: '#B8A899',
+          400: '#9D8B7A',
+          500: '#826F5F',
+          600: '#6E5F53',
+          700: '#594C43',
+          800: '#433932',
+          900: '#2F2924',
+          950: '#1A1714',
+        },
+        blue: {
+          50: '#F4F1EE',
+          100: '#E9E3DC',
+          200: '#D2C7BA',
+          300: '#B8A899',
+          400: '#9D8B7A',
+          500: '#826F5F',
+          600: '#6E5F53',
+          700: '#594C43',
+          800: '#433932',
+          900: '#2F2924',
+          950: '#1A1714',
+        },
+        indigo: {
+          50: '#F4F1EE',
+          100: '#E9E3DC',
+          200: '#D2C7BA',
+          300: '#B8A899',
+          400: '#9D8B7A',
+          500: '#826F5F',
+          600: '#6E5F53',
+          700: '#594C43',
+          800: '#433932',
+          900: '#2F2924',
+          950: '#1A1714',
+        },
+        violet: {
+          50: '#FFF1EC',
+          100: '#FFE1D4',
+          200: '#FFC4A8',
+          300: '#FFA06F',
+          400: '#FF7A3D',
+          500: '#FF5A12',
+          600: '#E84E00',
+          700: '#C24000',
+          800: '#A03700',
+          900: '#7A2B00',
+          950: '#471500',
+        },
+        purple: {
+          50: '#FFF2EF',
+          100: '#FFE2DA',
+          200: '#FFC5B6',
+          300: '#FFA184',
+          400: '#FF7C52',
+          500: '#FF5C2E',
+          600: '#E84A12',
+          700: '#C33C00',
+          800: '#9F3100',
+          900: '#782500',
+          950: '#451300',
+        },
+        fuchsia: {
+          50: '#FFF3F0',
+          100: '#FFE4DD',
+          200: '#FFC8BB',
+          300: '#FFA489',
+          400: '#FF7F5B',
+          500: '#FF5C33',
+          600: '#E84A1C',
+          700: '#C23A0D',
+          800: '#9F2F09',
+          900: '#772306',
+          950: '#451202',
+        },
+        pink: {
+          50: '#FFF3F0',
+          100: '#FFE4DD',
+          200: '#FFC8BB',
+          300: '#FFA489',
+          400: '#FF7F5B',
+          500: '#FF5C33',
+          600: '#E84A1C',
+          700: '#C23A0D',
+          800: '#9F2F09',
+          900: '#772306',
+          950: '#451202',
+        },
+        teal: {
+          50: '#F4F1EE',
+          100: '#E9E3DC',
+          200: '#D2C7BA',
+          300: '#B8A899',
+          400: '#9D8B7A',
+          500: '#826F5F',
+          600: '#6E5F53',
+          700: '#594C43',
+          800: '#433932',
+          900: '#2F2924',
+          950: '#1A1714',
+        },
+
+        red: {
+          50: '#FFF1EE',
+          100: '#FFDCD5',
+          200: '#F9B7A9',
+          300: '#F48E7A',
+          400: '#F1674F',
+          500: '#EC4A34',
+          600: '#D33F2C',
+          700: '#AE3324',
+          800: '#88271C',
+          900: '#661B14',
+          950: '#3C0F0B',
+        },
+        green: {
+          50: '#E9FBEF',
+          100: '#C8F3D4',
+          200: '#93E9AF',
+          300: '#60DF89',
+          400: '#2DD563',
+          500: '#00C853',
+          600: '#00AE48',
+          700: '#008E3B',
+          800: '#006F2E',
+          900: '#005421',
+          950: '#002E10',
+        },
+
         neon: {
-          cyan: '#888888',
-          purple: '#888888',
-          pink: '#888888',
-          blue: '#888888',
+          cyan: '#826F5F',
+          purple: '#9D8B7A',
+          pink: '#B8A899',
+          blue: '#9D8B7A',
         },
       },
       boxShadow: {
-        // Professional shadow system - subtle elevation
-        'card': '0 1px 3px rgba(0, 0, 0, 0.12)',
-        'card-hover': '0 4px 12px rgba(0, 0, 0, 0.15)',
-        'button': '0 2px 4px rgba(0, 0, 0, 0.15)',
-        'input-focus': '0 0 0 3px rgba(74, 155, 143, 0.1)',
-        'emergency': '0 4px 16px rgba(220, 38, 38, 0.25)',
+        'card': '0 8px 24px rgba(0, 0, 0, 0.35)',
+        'card-hover': '0 12px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(130, 111, 95, 0.16), 0 0 16px rgba(130, 111, 95, 0.08)',
+        'button': '0 8px 20px rgba(130, 111, 95, 0.18)',
+        'input-focus': '0 0 0 3px rgba(130, 111, 95, 0.22)',
+        'emergency': '0 0 24px rgba(255, 61, 0, 0.35)',
       },
       animation: {
         'float': 'float 6s ease-in-out infinite',

@@ -104,7 +104,7 @@ const CinematicIntro = ({ onComplete }) => {
                 <motion.div
                     className="absolute bottom-[30%] left-0 right-0 h-px"
                     style={{
-                        background: 'linear-gradient(90deg, transparent, rgba(6,182,212,0.3), transparent)'
+                        background: 'linear-gradient(90deg, transparent, rgba(255,106,0,0.3), transparent)'
                     }}
                     initial={{ scaleX: 0 }}
                     animate={{ scaleX: phase >= 1 ? 1 : 0 }}
@@ -121,8 +121,8 @@ const CinematicIntro = ({ onComplete }) => {
                   to bottom,
                   transparent,
                   transparent 40px,
-                  rgba(6,182,212,0.1) 40px,
-                  rgba(6,182,212,0.1) 42px
+                  rgba(255,106,0,0.1) 40px,
+                  rgba(255,106,0,0.1) 42px
                 )`,
                                 transform: 'rotateX(60deg) translateZ(-100px)'
                             }}

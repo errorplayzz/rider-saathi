@@ -7,6 +7,7 @@ import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useNetworkStatus, useNotifications } from '../hooks/useEnhancedFeatures'
+import locationAPI from '../services/locationAPI'
 import { 
   MagnifyingGlassIcon, 
   XMarkIcon, 
@@ -16,7 +17,12 @@ import {
   SignalIcon,
   ClockIcon,
   EyeIcon,
-  EyeSlashIcon
+  EyeSlashIcon,
+  BeakerIcon,
+  SparklesIcon,
+  BuildingOfficeIcon,
+  BanknotesIcon,
+  PlusCircleIcon
 } from '@heroicons/react/24/outline'
 
 // Fix default marker icons
@@ -74,13 +80,13 @@ const pulseAnimation = {
 }
 
 // Enhanced glassmorphism styles
-const glassPanel = "bg-white/10 backdrop-blur-md border border-white/20 shadow-xl"
-const glassPanelDark = "bg-black/20 backdrop-blur-md border border-white/10 shadow-2xl"
+const glassPanel = "bg-white/16 backdrop-blur-none border border-white/30 shadow-[0_20px_44px_-26px_rgba(15,23,42,0.55)]"
+const glassPanelDark = "bg-black/30 backdrop-blur-none border border-white/15 shadow-[0_24px_52px_-30px_rgba(2,6,23,0.9)]"
 const textPrimary = "text-white"
 const textSecondary = "text-white/70"
-const buttonActive = "bg-blue-500/80 text-white border border-blue-400/50"
-const buttonInactive = "bg-white/10 text-white/80 border border-white/20 hover:bg-white/20"
-const neonGlow = "drop-shadow-[0_0_8px_rgba(59,130,246,0.6)]"
+const buttonActive = "bg-orange-500/80 text-white border border-orange-400/50"
+const buttonInactive = "bg-white/8 text-white/85 border border-white/20 hover:bg-white/18"
+const neonGlow = "drop-shadow-[0_0_8px_rgba(255,138,61,0.6)]"
 const emerGlow = "drop-shadow-[0_0_12px_rgba(239,68,68,0.8)]"
 const createCustomIcon = (color, size = [25, 41]) => {
   return new L.Icon({
@@ -95,8 +101,8 @@ const createCustomIcon = (color, size = [25, 41]) => {
 
 // Icon definitions
 const icons = {
-  user: createCustomIcon('blue'),
-  friend: createCustomIcon('blue'),
+  user: createCustomIcon('orange'),
+  friend: createCustomIcon('orange'),
   stranger: createCustomIcon('gold'),
   emergency: createCustomIcon('red', [35, 51]),
   fuel: createCustomIcon('green'),
@@ -264,6 +270,45 @@ const EnhancedMap = memo(() => {
     }
     return `${Math.round(seconds / 60)} min`
   }
+
+  const normalizeRider = useCallback((rider) => {
+    if (!rider) return null
+
+    const rawLocation = rider.location || {}
+    const lat = Number(
+      rawLocation.lat ??
+      rawLocation.latitude ??
+      (Array.isArray(rawLocation.coordinates) ? rawLocation.coordinates[1] : undefined)
+    )
+    const lng = Number(
+      rawLocation.lng ??
+      rawLocation.longitude ??
+      (Array.isArray(rawLocation.coordinates) ? rawLocation.coordinates[0] : undefined)
+    )
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+
+    const riderId = rider.userId || rider.id || rider._id
+    const distanceKm = Number(rider.distance)
+    const distanceText = rider.distanceText || (
+      Number.isFinite(distanceKm)
+        ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m` : `${distanceKm.toFixed(1)}km`)
+        : '--'
+    )
+
+    return {
+      ...rider,
+      userId: riderId?.toString?.() || 'unknown',
+      id: riderId?.toString?.() || 'unknown',
+      location: { lat, lng },
+      distance: Number.isFinite(distanceKm) ? distanceKm : null,
+      distanceText,
+      name: rider.name || 'Rider',
+      isFriend: !!rider.isFriend,
+      status: rider.status || 'idle',
+      direction: rider.direction || ''
+    }
+  }, [])
   
   // Optimized refs
   const mapRef = useRef(null)
@@ -287,11 +332,16 @@ const EnhancedMap = memo(() => {
         ...options
       })
 
+      const payload = await response.json().catch(() => null)
+
       if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`)
+        const error = new Error(payload?.message || `API Error: ${response.status}`)
+        error.status = response.status
+        error.payload = payload
+        throw error
       }
 
-      return await response.json()
+      return payload
     } catch (error) {
       console.error(`API call failed for ${endpoint}:`, error)
       throw error
@@ -378,7 +428,7 @@ const EnhancedMap = memo(() => {
           <motion.div
             animate={{ rotate: 360 }}
             transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-            className="w-12 h-12 border-4 border-blue-200 border-t-blue-500 rounded-full mx-auto mb-4"
+            className="w-12 h-12 border-4 border-orange-200 border-t-orange-500 rounded-full mx-auto mb-4"
           />
           <p className="text-gray-700 font-medium">
             {Object.entries(loadingStates).find(([k, v]) => v)?.[0] || 'Loading map...'}
@@ -440,14 +490,56 @@ const EnhancedMap = memo(() => {
   useEffect(() => {
     if (!socket || !user) return
 
-    // Join user-specific room for location updates
-    socket.emit('join-user-room', user.id)
+    const currentUserId = user.id || user._id
+    if (currentUserId) {
+      socket.emit('join-user-room', currentUserId)
+    }
 
-    // Listen for nearby riders updates
-    socket.on('riders-nearby', (riders) => {
-      console.log('🚴‍♂️ Received nearby riders update:', riders.length)
-      setNearbyRiders(riders)
-    })
+    socket.emit('map:join')
+    socket.emit('location:get-nearby')
+
+    const handleNearbyRiders = (payload) => {
+      const riders = Array.isArray(payload) ? payload : (payload?.riders || [])
+      const normalizedRiders = riders.map(normalizeRider).filter(Boolean)
+      setNearbyRiders(normalizedRiders)
+      console.log('🚴‍♂️ Received nearby riders update:', normalizedRiders.length)
+    }
+
+    const handleRiderLocationUpdate = (payload) => {
+      const normalized = normalizeRider(payload)
+      if (!normalized) return
+
+      setNearbyRiders((prev) => {
+        const index = prev.findIndex(r => (r.userId || r.id) === normalized.userId)
+        if (index >= 0) {
+          const updated = [...prev]
+          updated[index] = { ...updated[index], ...normalized }
+          return updated
+        }
+        return [...prev, normalized]
+      })
+    }
+
+    const handleRiderEnter = (payload) => {
+      const normalized = normalizeRider(payload?.rider || payload)
+      if (!normalized) return
+
+      setNearbyRiders((prev) => {
+        const exists = prev.some(r => (r.userId || r.id) === normalized.userId)
+        return exists ? prev : [...prev, normalized]
+      })
+    }
+
+    const handleRiderExit = (payload) => {
+      const riderId = payload?.userId?.toString?.() || payload?.userId
+      if (!riderId) return
+      setNearbyRiders((prev) => prev.filter(r => (r.userId || r.id) !== riderId))
+    }
+
+    socket.on('riders:nearby', handleNearbyRiders)
+    socket.on('rider:location:update', handleRiderLocationUpdate)
+    socket.on('rider:enter', handleRiderEnter)
+    socket.on('rider:exit', handleRiderExit)
 
     // Listen for emergency alerts
     socket.on('emergency-alert', (alert) => {
@@ -464,15 +556,19 @@ const EnhancedMap = memo(() => {
     })
 
     return () => {
-      socket.off('riders-nearby')
+      socket.emit('map:leave')
+      socket.off('riders:nearby', handleNearbyRiders)
+      socket.off('rider:location:update', handleRiderLocationUpdate)
+      socket.off('rider:enter', handleRiderEnter)
+      socket.off('rider:exit', handleRiderExit)
       socket.off('emergency-alert')
       socket.off('emergency-update')
     }
-  }, [socket, user])
+  }, [socket, user, normalizeRider])
 
   // Update user location to backend and other riders
   useEffect(() => {
-    if (!userLocation || !socket || !user || !locationSharingEnabled) return
+    if (!userLocation || !user || !locationSharingEnabled) return
 
     // Throttle location updates (every 5 seconds)
     const now = Date.now()
@@ -482,16 +578,47 @@ const EnhancedMap = memo(() => {
 
     lastLocationUpdateRef.current = now
 
-    // Emit location update to backend
-    socket.emit('location-update', {
-      userId: user.id,
-      location: userLocation,
-      accuracy: accuracy,
-      timestamp: now
+    const payload = {
+      latitude: userLocation.lat,
+      longitude: userLocation.lng,
+      accuracy: accuracy || 10,
+      speed: 0,
+      heading: 0
+    }
+
+    if (socket?.connected) {
+      socket.emit('location:update', payload)
+      socket.emit('location:get-nearby')
+    }
+
+    locationAPI.updateLocation(payload).catch((error) => {
+      console.warn('Location REST sync failed:', error?.message || error)
     })
 
     console.log('📍 Location updated to backend:', userLocation)
   }, [userLocation, socket, user, accuracy, locationSharingEnabled])
+
+  // REST fallback for nearby riders (keeps map working even if socket updates are delayed)
+  useEffect(() => {
+    if (!userLocation || !locationSharingEnabled) return
+
+    const fetchNearby = async () => {
+      try {
+        const response = await locationAPI.getNearbyRiders()
+        const riders = response?.data?.riders || []
+        if (Array.isArray(riders)) {
+          setNearbyRiders(riders.map(normalizeRider).filter(Boolean))
+        }
+      } catch (error) {
+        console.warn('Nearby riders REST fallback failed:', error?.message || error)
+      }
+    }
+
+    fetchNearby()
+    const interval = setInterval(fetchNearby, 20000)
+
+    return () => clearInterval(interval)
+  }, [userLocation?.lat, userLocation?.lng, locationSharingEnabled, normalizeRider])
 
   // Fetch emergency alerts on map load with error handling
   useEffect(() => {
@@ -839,9 +966,6 @@ const EnhancedMap = memo(() => {
   // Optimized POI fetching with better error handling
   const fetchNearbyPOIs = useCallback(async (category = 'fuel') => {
     if (!userLocation) return
-
-    // Prevent multiple simultaneous calls
-    if (isLoading) return
   
     console.log(`🔍 Fetching ${category} POIs...`)
     setIsLoading(true)
@@ -870,15 +994,25 @@ const EnhancedMap = memo(() => {
       
       const data = await response.json()
       const pois = data.elements
-        ?.filter(element => element.lat && element.lon)
-        .map(element => ({
-          id: element.id,
-          name: element.tags?.name || `${category} station`,
-          lat: element.lat,
-          lng: element.lon,
-          category: category,
-          tags: element.tags || {}
-        })) || []
+        ?.map(element => {
+          const lat = element.lat ?? element.center?.lat
+          const lon = element.lon ?? element.center?.lon
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+            return null
+          }
+
+          return {
+            id: element.id,
+            name: element.tags?.name || `${category} station`,
+            lat,
+            lng: lon,
+            category: category,
+            tags: element.tags || {}
+          }
+        })
+        ?.filter(Boolean)
+        ?.slice(0, 30)
+        || []
 
       setNearbyPOIs(pois)
       console.log(`✅ Found ${pois.length} nearby ${category} POIs`)
@@ -917,6 +1051,8 @@ const EnhancedMap = memo(() => {
       [out:json][timeout:25];
       (
         node${queries[category] || queries.fuel}(around:${radius},${lat},${lng});
+        way${queries[category] || queries.fuel}(around:${radius},${lat},${lng});
+        relation${queries[category] || queries.fuel}(around:${radius},${lat},${lng});
       );
       out center;
     `
@@ -945,7 +1081,7 @@ const EnhancedMap = memo(() => {
     })
 
     const emergencyOperation = async () => {
-      const alert = await apiCall('/api/emergency/alert', {
+      const response = await apiCall('/api/emergency/alert', {
         method: 'POST',
         body: JSON.stringify({
           type: type,
@@ -959,9 +1095,21 @@ const EnhancedMap = memo(() => {
         })
       })
 
+      const alert = response?.alert || response
+      if (!alert) {
+        throw new Error('Invalid emergency alert response')
+      }
+
       // Emit to all nearby riders via socket
       if (socket && socket.connected) {
-        socket.emit('emergency-alert', alert)
+        socket.emit('emergency-alert', {
+          id: alert.id,
+          type: alert.type,
+          severity: alert.severity,
+          location: alert.location,
+          description: alert.description,
+          createdAt: alert.createdAt
+        })
         console.log('📡 Emergency alert broadcasted via socket')
       }
 
@@ -993,6 +1141,19 @@ const EnhancedMap = memo(() => {
       console.log('🚨 Emergency alert created and broadcasted:', alert)
     } catch (error) {
       setMapInteractionMode('normal')
+
+      // If backend responded with known validation/business error, do not fake offline alert.
+      if (error?.status && error.status < 500) {
+        showNotification({
+          type: 'warning',
+          title: 'Emergency Alert Not Sent',
+          message: error?.payload?.message || error.message || 'Please try again in a moment',
+          duration: 5000,
+          priority: 'high'
+        })
+        return
+      }
+
       console.log('⚠️ Backend unavailable, creating local emergency alert')
       
       // Create local alert for offline mode
@@ -1082,8 +1243,8 @@ const EnhancedMap = memo(() => {
           animate={{ opacity: 1 }}
           className="text-center space-y-4"
         >
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-cyan-400 mx-auto"></div>
-          <p className="text-cyan-400 text-lg">Getting your location...</p>
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-400 mx-auto"></div>
+          <p className="text-orange-400 text-lg">Getting your location...</p>
           <p className="text-gray-400 text-sm">Please allow location access for the best experience</p>
         </motion.div>
       </div>
@@ -1099,8 +1260,8 @@ const EnhancedMap = memo(() => {
       height: 'calc(100vh - 80px)', // Account for 80px navbar height
       marginTop: '80px', // Push content below fixed navbar
       background: isDark
-        ? 'linear-gradient(135deg, #1e293b, #0f172a)'
-        : 'linear-gradient(135deg, #f8fafc, #e2e8f0)'
+        ? 'linear-gradient(135deg, #121212, #0A0A0A)'
+        : 'linear-gradient(135deg, #FAFAFA, #E5E5E5)'
     }}
     animate={controls}
   >
@@ -1130,12 +1291,16 @@ const EnhancedMap = memo(() => {
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.5 }}
-      className={`h-full w-full ${mapInteractionMode === 'emergency' ? 'ring-4 ring-red-500 ring-opacity-50' : ''}`}
+      className={`h-full w-full lg:p-3 ${mapInteractionMode === 'emergency' ? 'ring-4 ring-red-500 ring-opacity-50' : ''}`}
     >
+        <div className="pointer-events-none absolute inset-0 z-[998]">
+          <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-black/40 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-black/35 to-transparent" />
+        </div>
         <MapContainer
           center={mapCenter}
           zoom={mapZoom}
-          className="h-full w-full"
+          className="h-full w-full lg:rounded-2xl lg:overflow-hidden lg:ring-1 lg:ring-white/10"
           ref={mapRef}
           zoomControl={false}
         >
@@ -1165,14 +1330,14 @@ const EnhancedMap = memo(() => {
         {/* Nearby riders markers */}
         {nearbyRiders.map(rider => (
           <Marker
-            key={rider.id}
+            key={rider.userId || rider.id}
             position={[rider.location.lat, rider.location.lng]}
             icon={rider.isFriend ? icons.friend : icons.stranger}
           >
             <Popup>
               <div className="text-center">
                 <strong>🚴‍♂️ {rider.name}</strong><br />
-                <span className={rider.isFriend ? 'text-blue-600' : 'text-yellow-600'}>
+                <span className={rider.isFriend ? 'text-orange-600' : 'text-yellow-600'}>
                   {rider.isFriend ? 'Friend' : 'Nearby Rider'}
                 </span><br />
                 <small>Distance: {rider.distance?.toFixed(0)}m</small>
@@ -1233,7 +1398,7 @@ const EnhancedMap = memo(() => {
         {routeCoordinates.length > 0 && (
           <Polyline 
             positions={routeCoordinates} 
-            color="#3b82f6" 
+            color="#FF8A3D" 
             weight={4}
             opacity={0.7}
           />
@@ -1249,8 +1414,12 @@ const EnhancedMap = memo(() => {
               initial={{ y: -100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -100, opacity: 0 }}
-              className={`absolute top-4 left-4 z-[1000] ${isDark ? glassPanelDark : glassPanel} rounded-xl p-4 min-w-[300px]`}
+              className={`absolute top-4 left-4 z-[1000] ${isDark ? glassPanelDark : glassPanel} rounded-2xl p-4 min-w-[320px]`}
             >
+              <div className="flex items-center justify-between mb-2">
+                <p className={`text-xs uppercase tracking-[0.12em] ${textSecondary}`}>Search</p>
+                <span className="text-[11px] text-orange-300 bg-orange-500/20 px-2 py-0.5 rounded-full border border-orange-400/30">Live</span>
+              </div>
               <div className="relative">
                 <MagnifyingGlassIcon className={`absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 ${textSecondary}`} />
                 <input
@@ -1261,7 +1430,7 @@ const EnhancedMap = memo(() => {
                     setSearchQuery(e.target.value)
                     handleSearch(e.target.value)
                   }}
-                  className={`w-full pl-10 pr-4 py-2 ${isDark ? 'bg-black/30 border-white/20 text-white placeholder-white/50' : 'bg-white/20 border-white/30 text-white placeholder-white/70'} border rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent backdrop-blur-sm`}
+                  className={`w-full pl-10 pr-4 py-2.5 ${isDark ? 'bg-black/35 border-white/20 text-white placeholder-white/55' : 'bg-white/25 border-white/35 text-white placeholder-white/75'} border rounded-xl focus:ring-2 focus:ring-orange-400 focus:border-transparent backdrop-blur-none`}
                 />
               </div>
 
@@ -1277,7 +1446,7 @@ const EnhancedMap = memo(() => {
                         setShowSearchResults(false)
                         setSearchQuery('')
                       }}
-                      className={`p-2 cursor-pointer rounded text-sm transition-colors ${buttonInactive} hover:${buttonActive.replace('bg-blue-500/80', 'bg-blue-500/60')} mt-1`}
+                      className={`p-2 cursor-pointer rounded text-sm transition-colors ${buttonInactive} hover:${buttonActive.replace('bg-orange-500/80', 'bg-orange-500/60')} mt-1`}
                     >
                       <div className={`font-medium truncate ${textPrimary}`}>{result.name.split(',')[0]}</div>
                       <div className={`${textSecondary} text-xs truncate`}>{result.name}</div>
@@ -1287,36 +1456,37 @@ const EnhancedMap = memo(() => {
               )}
             </motion.div>
 
-            {/* POI Category Selector */}
+            {/* POI Category Selector (Premium Redesign) */}
             <motion.div
-              initial={{ x: 100, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 100, opacity: 0 }}
-              className={`absolute top-4 right-4 z-[1000] ${isDark ? glassPanelDark : glassPanel} rounded-xl p-3`}
+              initial={{ x: 30, opacity: 0, filter: 'blur(10px)' }}
+              animate={{ x: 0, opacity: 1, filter: 'blur(0px)' }}
+              exit={{ x: 30, opacity: 0, filter: 'blur(10px)' }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="absolute top-24 right-6 z-[1002] pointer-events-auto flex flex-col gap-3"
             >
-              <div className="flex flex-col space-y-2">
-                <h3 className={`text-sm font-semibold text-center ${textPrimary}`}>Find Places</h3>
-                {[
-                  { key: 'fuel', icon: '⛽', label: 'Fuel' },
-                  { key: 'food', icon: '🍽️', label: 'Food' },
-                  { key: 'hotel', icon: '🏨', label: 'Hotels' },
-                  { key: 'atm', icon: '🏧', label: 'ATM' },
-                  { key: 'hospital', icon: '🏥', label: 'Medical' }
-                ].map(poi => (
-                  <button
-                    key={poi.key}
-                    onClick={() => handlePOICategorySelect(poi.key)}
-                    className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-all duration-200 ${
-                      selectedPOICategory === poi.key 
-                        ? buttonActive 
-                        : buttonInactive
-                    }`}
-                  >
-                    <span className="text-lg">{poi.icon}</span>
-                    <span className="font-medium">{poi.label}</span>
-                  </button>
-                ))}
-              </div>
+              <div className="text-[10px] font-semibold text-right text-[#86868B] uppercase tracking-[0.2em] mb-1 mr-1">Find Places</div>
+              {[
+                { key: 'fuel', label: 'Fuel', icon: BeakerIcon },
+                { key: 'food', label: 'Food', icon: SparklesIcon },
+                { key: 'hotel', label: 'Hotels', icon: BuildingOfficeIcon },
+                { key: 'atm', label: 'ATM', icon: BanknotesIcon },
+                { key: 'hospital', label: 'Medical', icon: PlusCircleIcon }
+              ].map(poi => (
+                <button
+                  key={poi.key}
+                  onClick={() => handlePOICategorySelect(poi.key)}
+                  className={`group flex items-center justify-end gap-3 px-4 py-2.5 rounded-full backdrop-blur-xl ring-1 transition-all duration-300 hover:scale-105 ${
+                    selectedPOICategory === poi.key 
+                      ? 'bg-[#B08968] ring-[#B08968]/50 text-[#090909] shadow-[0_0_20px_rgba(176,137,104,0.3)]' 
+                      : 'bg-[#111111]/80 ring-white/10 text-[#F5F5F7] hover:bg-[#1a1a1a]'
+                  }`}
+                >
+                  <span className="text-xs font-medium">{poi.label}</span>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center ${selectedPOICategory === poi.key ? 'bg-black/20' : 'bg-white/5 group-hover:bg-[#B08968]/20'}`}>
+                    <poi.icon className={`w-3.5 h-3.5 ${selectedPOICategory === poi.key ? 'text-black' : 'text-[#B08968]'}`} />
+                  </div>
+                </button>
+              ))}
             </motion.div>
 
             {/* Emergency Button - Hidden per user request */}
@@ -1336,10 +1506,10 @@ const EnhancedMap = memo(() => {
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
-              className={`absolute bottom-4 left-4 z-[1000] ${isDark ? glassPanelDark : glassPanel} rounded-xl p-3`}
+              className={`absolute bottom-4 left-4 z-[1000] ${isDark ? glassPanelDark : glassPanel} rounded-2xl p-3 min-w-[180px]`}
             >
               <div className={`flex items-center space-x-2 text-sm`}>
-                <UsersIcon className="h-5 w-5 text-blue-400" />
+                <UsersIcon className="h-5 w-5 text-orange-400" />
                 <span className={`font-medium ${textPrimary}`}>{nearbyRiders.length} riders nearby</span>
               </div>
               {/* Emergency alerts counter hidden per user request */}
@@ -1351,7 +1521,7 @@ const EnhancedMap = memo(() => {
                 initial={{ y: 100, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: 100, opacity: 0 }}
-                className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-[1000] bg-blue-500 text-white rounded-xl shadow-lg p-3"
+                className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-[1000] bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-2xl shadow-[0_20px_42px_-20px_rgba(249,115,22,0.8)] p-3"
               >
                 <div className="text-center">
                   <div className="font-bold">{formatDistance(routeInfo.distanceMeters)}</div>
@@ -1362,27 +1532,35 @@ const EnhancedMap = memo(() => {
 
             {routeInstructions.length > 0 && (
               <motion.div
-                initial={{ y: 100, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: 100, opacity: 0 }}
-                className={`absolute bottom-20 right-4 z-[1000] ${isDark ? glassPanelDark : glassPanel} rounded-xl p-3 w-72 max-h-72 overflow-hidden`}
+                initial={{ x: -30, opacity: 0, filter: 'blur(10px)' }}
+                animate={{ x: 0, opacity: 1, filter: 'blur(0px)' }}
+                exit={{ x: -30, opacity: 0, filter: 'blur(10px)' }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+                className="absolute bottom-24 left-6 z-[1002] w-72 max-h-[300px] bg-[#111111]/80 backdrop-blur-3xl rounded-[24px] p-4 ring-1 ring-white/10 shadow-[0_24px_48px_rgba(0,0,0,0.6)] flex flex-col"
               >
-                <div className={`text-sm font-semibold mb-2 ${textPrimary}`}>Route Steps</div>
-                <div className="text-xs mb-2 text-blue-400">
-                  Next: {routeInstructions[currentStepIndex]?.instruction || 'Continue'}
-                </div>
-                <div className="space-y-2 overflow-y-auto max-h-48 pr-1">
+                <div className="text-[10px] font-semibold text-[#86868B] uppercase tracking-[0.2em] mb-3 ml-1">Route Steps</div>
+                
+                {/* Next Step Highlight */}
+                {routeInstructions[currentStepIndex] && (
+                  <div className="mb-4 bg-gradient-to-r from-[#B08968]/20 to-transparent p-3 rounded-xl border-l-2 border-[#B08968]">
+                    <div className="text-[10px] text-[#B08968] uppercase tracking-widest mb-1">Up Next</div>
+                    <div className="text-sm font-semibold text-[#F5F5F7]">{routeInstructions[currentStepIndex].instruction}</div>
+                  </div>
+                )}
+                
+                {/* Step List */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-2">
                   {routeInstructions.map((step, index) => (
                     <div
                       key={step.id}
-                      className={`rounded-md p-2 text-xs ${
+                      className={`rounded-xl p-3 text-xs transition-colors ${
                         index === currentStepIndex
-                          ? 'bg-blue-500/20 border border-blue-400/40'
-                          : 'bg-black/10'
+                          ? 'bg-white/5 border border-white/10'
+                          : 'bg-transparent text-white/50 hover:bg-white/5'
                       }`}
                     >
-                      <div className={`font-medium ${textPrimary}`}>{step.instruction}</div>
-                      <div className={`${textSecondary}`}>
+                      <div className={`font-medium ${index === currentStepIndex ? 'text-[#F5F5F7]' : 'text-white/60'}`}>{step.instruction}</div>
+                      <div className="text-[10px] text-white/40 mt-1 uppercase tracking-widest">
                         {formatDistance(step.distance)} • {formatDuration(step.duration)}
                       </div>
                     </div>
@@ -1444,7 +1622,7 @@ const EnhancedMap = memo(() => {
                     { type: 'accident', label: '🚗 Accident', color: 'bg-red-500' },
                     { type: 'breakdown', label: '🔧 Breakdown', color: 'bg-yellow-500' },
                     { type: 'medical', label: '🏥 Medical Emergency', color: 'bg-red-600' },
-                    { type: 'general', label: '⚠️ General Help', color: 'bg-blue-500' }
+                    { type: 'general', label: '⚠️ General Help', color: 'bg-orange-500' }
                   ].map(emergency => (
                     <button
                       key={emergency.type}
@@ -1482,7 +1660,7 @@ const EnhancedMap = memo(() => {
         whileHover={{ scale: 1.05, y: -2 }}
         whileTap={{ scale: 0.95 }}
         animate={controlPanelControls}
-        className={`${glassPanel} absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg border border-white/20`}
+        className={`${glassPanel} absolute top-4 right-4 z-[1002] text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg border border-white/25`}
       >
         {showControls ? (
           <span className="flex items-center gap-2">

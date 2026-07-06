@@ -162,7 +162,7 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     try {
-      const { email, password, name, phone, bikeDetails } = userData
+      const { email, password, name, phone, bikeDetails, username, state } = userData
       
       // Sign up the user
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
@@ -171,7 +171,9 @@ export const AuthProvider = ({ children }) => {
         options: {
           data: {
             name,
-            phone
+            phone,
+            username,
+            state
           }
         }
       })
@@ -183,6 +185,8 @@ export const AuthProvider = ({ children }) => {
         const updates = {
           name,
           phone,
+          username,
+          state,
           bike_details: bikeDetails || {}
         }
         

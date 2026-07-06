@@ -35,6 +35,7 @@ const upload = multer({
 
 // Use a safe default secret in development if none is provided
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret'
+const USERNAME_REGEX = /^[a-z0-9_]{3,20}$/
 
 // In-memory store for demo emergency contacts when DB is disconnected
 const demoEmergencyContacts = new Map()
@@ -46,12 +47,49 @@ const generateToken = (userId) => {
   })
 }
 
+// @route   GET /api/auth/check-username/:username
+// @desc    Check username availability
+// @access  Public
+router.get('/check-username/:username', async (req, res) => {
+  try {
+    const rawUsername = (req.params.username || '').toLowerCase().trim()
+    if (!USERNAME_REGEX.test(rawUsername)) {
+      return res.status(400).json({
+        success: false,
+        available: false,
+        message: 'Username must be 3-20 chars and contain only lowercase letters, numbers, and underscore'
+      })
+    }
+
+    if (mongoose.connection.readyState !== 1) {
+      return res.json({ success: true, available: true, message: 'Available (demo mode)' })
+    }
+
+    const existing = await User.findOne({ username: rawUsername }).select('_id')
+    return res.json({
+      success: true,
+      available: !existing,
+      message: existing ? 'Username already taken' : 'Username available'
+    })
+  } catch (error) {
+    return res.status(500).json({ success: false, available: false, message: 'Failed to check username', error: error.message })
+  }
+})
+
 // @route   POST /api/auth/register
 // @desc    Register a new user
 // @access  Public
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, phone, bikeDetails } = req.body
+    const { name, email, password, phone, bikeDetails, username, state } = req.body
+    const normalizedUsername = (username || '').toLowerCase().trim()
+
+    if (!USERNAME_REGEX.test(normalizedUsername)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid username is required (3-20 lowercase letters/numbers/underscore)'
+      })
+    }
 
     // Ensure database is connected for real registrations
     if (mongoose.connection.readyState !== 1) {
@@ -70,13 +108,24 @@ router.post('/register', async (req, res) => {
       })
     }
 
+    const existingUsername = await User.findOne({ username: normalizedUsername }).select('_id')
+    if (existingUsername) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username already taken'
+      })
+    }
+
     // Create new user
     const user = new User({
       name,
       email,
       password,
       phone,
-      bikeDetails
+      bikeDetails,
+      username: normalizedUsername,
+      usernameLocked: true,
+      state
     })
 
     await user.save()
@@ -284,7 +333,7 @@ router.post('/emergency-contacts', auth, async (req, res) => {
 // @access  Private
 router.put('/profile', auth, async (req, res) => {
   try {
-    const allowedUpdates = ['name', 'phone', 'bikeDetails', 'emergencyContacts', 'preferences']
+    const allowedUpdates = ['name', 'phone', 'bikeDetails', 'emergencyContacts', 'preferences', 'username', 'state']
     const updates = Object.keys(req.body)
     const isValidOperation = updates.every(update => allowedUpdates.includes(update))
 
@@ -292,6 +341,21 @@ router.put('/profile', auth, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Invalid updates'
+      })
+    }
+
+    if (mongoose.connection.readyState !== 1) {
+      return res.json({
+        success: true,
+        message: 'Profile updated (demo mode)',
+        user: {
+          _id: req.user.id,
+          id: req.user.id,
+          name: req.body.name || 'Demo Rider',
+          username: req.body.username || null,
+          usernameLocked: !!req.body.username,
+          state: req.body.state || null
+        }
       })
     }
 
@@ -303,7 +367,37 @@ router.put('/profile', auth, async (req, res) => {
       })
     }
 
+    if (updates.includes('username')) {
+      const requestedUsername = (req.body.username || '').toLowerCase().trim()
+
+      if (!USERNAME_REGEX.test(requestedUsername)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Username must be 3-20 chars and contain only lowercase letters, numbers and underscore'
+        })
+      }
+
+      if (user.username && user.usernameLocked && user.username !== requestedUsername) {
+        return res.status(400).json({
+          success: false,
+          message: 'Username can be set only once and cannot be changed'
+        })
+      }
+
+      const existing = await User.findOne({ username: requestedUsername, _id: { $ne: user._id } }).select('_id')
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          message: 'Username already taken'
+        })
+      }
+
+      user.username = requestedUsername
+      user.usernameLocked = true
+    }
+
     updates.forEach(update => {
+      if (update === 'username') return
       user[update] = req.body[update]
     })
 

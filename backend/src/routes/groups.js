@@ -126,6 +126,48 @@ router.get('/:groupId/messages', protect, async (req, res) => {
   }
 });
 
+// Send group message
+router.post('/:groupId/messages', protect, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { content, contentType = 'text', mediaUrl, replyTo } = req.body;
+
+    if (!content || !content.trim()) {
+      return res.status(400).json({ success: false, error: 'Message content is required' });
+    }
+
+    const group = await Group.findById(groupId);
+    if (!group || !group.isMember(req.user._id)) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const message = await Message.create({
+      sender: req.user._id,
+      group: groupId,
+      messageType: 'group',
+      content: content.trim(),
+      contentType,
+      mediaUrl,
+      replyTo
+    });
+
+    await message.populate('sender', 'name avatar');
+
+    group.lastMessage = message._id;
+    group.lastActivity = new Date();
+    await group.save();
+
+    req.app.get('socketService')?.io.to(`group:${groupId}`).emit('new-group-message', {
+      groupId,
+      message
+    });
+
+    res.status(201).json({ success: true, data: message });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Add member to group
 router.post('/:groupId/members', protect, async (req, res) => {
   try {

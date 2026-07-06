@@ -23,7 +23,7 @@ const BasicMap = () => {
   return (
     <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center">
       <div className="text-center space-y-6">
-        <h1 className="text-4xl font-bold text-cyan-400">🗺️ Basic Map</h1>
+        <h1 className="text-4xl font-bold text-orange-400">🗺️ Basic Map</h1>
         
         {isMapReady ? (
           <div className="space-y-4">
@@ -34,7 +34,7 @@ const BasicMap = () => {
               <p>🌐 Network connected</p>
             </div>
             
-            <div className="bg-blue-900 p-4 rounded-lg">
+            <div className="bg-orange-900 p-4 rounded-lg">
               <p className="text-sm">Actual map will load here</p>
               <p className="text-xs text-gray-400">
                 Component successfully mounted without crashes
@@ -43,8 +43,8 @@ const BasicMap = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-cyan-400 mx-auto"></div>
-            <p className="text-cyan-400">Loading map...</p>
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-400 mx-auto"></div>
+            <p className="text-orange-400">Loading map...</p>
           </div>
         )}
       </div>

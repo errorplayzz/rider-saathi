@@ -12,10 +12,10 @@ const FloatingOrbs = ({ count = 8 }) => {
     // Generate random orb configurations
     const orbs = Array.from({ length: count }, (_, i) => {
         const colors = [
-            'rgba(94, 234, 212, 0.08)',   // teal
-            'rgba(56, 189, 248, 0.06)',   // sky
-            'rgba(168, 85, 247, 0.05)',   // purple
-            'rgba(59, 130, 246, 0.07)',   // blue
+            'rgba(255, 106, 0, 0.08)',   // teal
+            'rgba(255, 61, 0, 0.06)',   // sky
+            'rgba(255, 125, 48, 0.05)',   // purple
+            'rgba(255, 138, 61, 0.07)',   // blue
         ]
 
         return {
@@ -80,7 +80,7 @@ const ScanLines = () => {
             <div
                 className="w-full h-full"
                 style={{
-                    backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(94, 234, 212, 0.5) 2px, rgba(94, 234, 212, 0.5) 4px)',
+                    backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255, 106, 0, 0.5) 2px, rgba(255, 106, 0, 0.5) 4px)',
                 }}
             />
         </div>
@@ -97,7 +97,7 @@ const RadialPulse = () => {
             {[0, 1, 2].map((i) => (
                 <motion.div
                     key={i}
-                    className="absolute w-[200px] h-[200px] rounded-full border border-teal-400/10"
+                    className="absolute w-[200px] h-[200px] rounded-full border border-orange-400/10"
                     animate={{
                         scale: [1, 8],
                         opacity: [0.4, 0],
@@ -203,3 +203,4 @@ const Starfield = () => {
  */
 export { FloatingOrbs, ScanLines, RadialPulse, Starfield }
 export default FloatingOrbs
+

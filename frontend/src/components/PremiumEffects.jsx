@@ -33,9 +33,9 @@ const HolographicCard = ({
             linear-gradient(
               115deg,
               transparent 0%,
-              rgba(94, 234, 212, ${config.shine}) 30%,
-              rgba(56, 189, 248, ${config.shine}) 50%,
-              rgba(168, 85, 247, ${config.shine}) 70%,
+              rgba(255, 106, 0, ${config.shine}) 30%,
+              rgba(255, 61, 0, ${config.shine}) 50%,
+              rgba(255, 125, 48, ${config.shine}) 70%,
               transparent 100%
             )
           `,
@@ -80,7 +80,7 @@ const HolographicCard = ({
       <motion.div
         className="absolute inset-0 rounded-inherit pointer-events-none"
         style={{
-          background: 'linear-gradient(45deg, rgba(94, 234, 212, 0.2), rgba(168, 85, 247, 0.2), rgba(56, 189, 248, 0.2))',
+          background: 'linear-gradient(45deg, rgba(255, 106, 0, 0.2), rgba(255, 125, 48, 0.2), rgba(255, 61, 0, 0.2))',
           backgroundSize: '300% 300%',
           opacity: 0,
           padding: '1px',
@@ -113,9 +113,9 @@ const NeonGlow = ({
   className = '' 
 }) => {
   const colorMap = {
-    teal: 'rgba(94, 234, 212, 1)',
-    blue: 'rgba(56, 189, 248, 1)',
-    purple: 'rgba(168, 85, 247, 1)',
+    teal: 'rgba(255, 106, 0, 1)',
+    blue: 'rgba(255, 61, 0, 1)',
+    purple: 'rgba(255, 125, 48, 1)',
     red: 'rgba(239, 68, 68, 1)',
   }
 
@@ -178,7 +178,7 @@ const GlassCard = ({
 const GradientBorder = ({ 
   children, 
   className = '',
-  colors = ['#5EEAD4', '#38BDF8', '#A855F7'],
+  colors = ['#FF8A3D', '#FF6A00', '#FF3D00'],
   borderWidth = 2,
   speed = 3 
 }) => {
@@ -241,7 +241,7 @@ const SpotlightEffect = ({ children, className = '' }) => {
         style={{
           width: '300px',
           height: '300px',
-          background: 'radial-gradient(circle, rgba(94, 234, 212, 0.15) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(255, 106, 0, 0.15) 0%, transparent 70%)',
           filter: 'blur(30px)',
           left: mousePosition.x - 150,
           top: mousePosition.y - 150,

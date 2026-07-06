@@ -18,6 +18,11 @@ export default defineConfig({
         secure: false,
   // preserve the /api prefix so backend routes (for example /api/ai/gpt) continue to match
         rewrite: (path) => path.replace(/^\/api/, '/api')
+      },
+      '/uploads': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+        secure: false
       }
     }
   },

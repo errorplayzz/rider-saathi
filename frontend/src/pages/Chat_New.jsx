@@ -175,7 +175,7 @@ const Chat = () => {
         {/* Header */}
         <div className="p-4 border-b border-slate-200 dark:border-slate-800">
           <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-3 flex items-center">
-            <ChatBubbleLeftIcon className="w-6 h-6 mr-2 text-cyan-500" />
+            <ChatBubbleLeftIcon className="w-6 h-6 mr-2 text-orange-500" />
             Rider Network
           </h2>
           
@@ -186,7 +186,7 @@ const Chat = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search riders, communities..."
-              className="w-full px-4 py-2 pl-10 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg border border-slate-300 dark:border-slate-700 focus:ring-2 focus:ring-cyan-500 outline-none text-sm"
+              className="w-full px-4 py-2 pl-10 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg border border-slate-300 dark:border-slate-700 focus:ring-2 focus:ring-orange-500 outline-none text-sm"
             />
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
           </div>
@@ -198,7 +198,7 @@ const Chat = () => {
             onClick={() => setActiveTab('friends')}
             className={`flex-1 py-3 text-sm font-medium transition-colors ${
               activeTab === 'friends'
-                ? 'text-cyan-600 dark:text-cyan-400 border-b-2 border-cyan-500'
+                ? 'text-orange-600 dark:text-orange-400 border-b-2 border-orange-500'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -209,7 +209,7 @@ const Chat = () => {
             onClick={() => setActiveTab('communities')}
             className={`flex-1 py-3 text-sm font-medium transition-colors ${
               activeTab === 'communities'
-                ? 'text-cyan-600 dark:text-cyan-400 border-b-2 border-cyan-500'
+                ? 'text-orange-600 dark:text-orange-400 border-b-2 border-orange-500'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -220,7 +220,7 @@ const Chat = () => {
             onClick={() => setActiveTab('nearby')}
             className={`flex-1 py-3 text-sm font-medium transition-colors ${
               activeTab === 'nearby'
-                ? 'text-cyan-600 dark:text-cyan-400 border-b-2 border-cyan-500'
+                ? 'text-orange-600 dark:text-orange-400 border-b-2 border-orange-500'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -252,7 +252,7 @@ const Chat = () => {
                         key={request.id}
                         initial={{ scale: 0.95, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
-                        className="p-3 bg-cyan-50 dark:bg-cyan-900/20 rounded-lg border border-cyan-200 dark:border-cyan-800 mb-2"
+                        className="p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800 mb-2"
                       >
                         <div className="flex items-start justify-between mb-2">
                           <div>
@@ -264,7 +264,7 @@ const Chat = () => {
                         <div className="flex gap-2">
                           <button
                             onClick={() => acceptFriendRequest(request.id)}
-                            className="flex-1 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-xs font-medium transition-colors"
+                            className="flex-1 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-medium transition-colors"
                           >
                             <CheckIcon className="w-3 h-3 inline mr-1" />
                             Accept
@@ -293,13 +293,13 @@ const Chat = () => {
                     onClick={() => setSelectedChat({ type: 'dm', id: friend.id, data: friend })}
                     className={`p-3 rounded-lg cursor-pointer transition-all ${
                       selectedChat?.id === friend.id
-                        ? 'bg-cyan-100 dark:bg-cyan-900/30 ring-2 ring-cyan-500'
+                        ? 'bg-orange-100 dark:bg-orange-900/30 ring-2 ring-orange-500'
                         : 'bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700'
                     }`}
                   >
                     <div className="flex items-center space-x-3">
                       <div className="relative">
-                        <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white font-bold">
+                        <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-500 rounded-full flex items-center justify-center text-white font-bold">
                           {friend.name.charAt(0)}
                         </div>
                         {friend.online && (
@@ -329,7 +329,7 @@ const Chat = () => {
                 exit={{ opacity: 0, x: -20 }}
                 className="p-3 space-y-3"
               >
-                <button className="w-full p-3 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center">
+                <button className="w-full p-3 bg-gradient-to-r from-orange-500 to-orange-500 hover:from-orange-600 hover:to-orange-600 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center">
                   <PlusCircleIcon className="w-5 h-5 mr-2" />
                   Create Community
                 </button>
@@ -347,19 +347,19 @@ const Chat = () => {
                     }}
                     className={`p-3 rounded-lg cursor-pointer transition-all ${
                       selectedChat?.id === community.id
-                        ? 'bg-cyan-100 dark:bg-cyan-900/30 ring-2 ring-cyan-500'
+                        ? 'bg-orange-100 dark:bg-orange-900/30 ring-2 ring-orange-500'
                         : 'bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700'
                     }`}
                   >
                     <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-500 rounded-lg flex items-center justify-center text-2xl">
+                      <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-red-500 rounded-lg flex items-center justify-center text-2xl">
                         {community.avatar}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-1">
                           <h4 className="font-medium text-slate-900 dark:text-white text-sm truncate">{community.name}</h4>
                           {community.verified && (
-                            <ShieldCheckIcon className="w-4 h-4 text-cyan-500" />
+                            <ShieldCheckIcon className="w-4 h-4 text-orange-500" />
                           )}
                         </div>
                         <p className="text-xs text-slate-600 dark:text-slate-400">{community.members.toLocaleString()} members</p>
@@ -380,8 +380,8 @@ const Chat = () => {
                 exit={{ opacity: 0, x: -20 }}
                 className="p-3 space-y-3"
               >
-                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                  <p className="text-xs text-blue-700 dark:text-blue-300 flex items-center">
+                <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                  <p className="text-xs text-orange-700 dark:text-orange-300 flex items-center">
                     <MapPinIcon className="w-4 h-4 mr-1" />
                     Riders within 5 km radius
                   </p>
@@ -412,7 +412,7 @@ const Chat = () => {
                           <p className="text-xs text-emerald-600 dark:text-emerald-400">{rider.distance} away</p>
                         </div>
                       </div>
-                      <button className="p-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors">
+                      <button className="p-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors">
                         <UserPlusIcon className="w-4 h-4" />
                       </button>
                     </div>
@@ -431,14 +431,14 @@ const Chat = () => {
             {/* Chat/Feed Header */}
             <div className="h-16 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-6 bg-white dark:bg-slate-900">
               <div className="flex items-center space-x-4">
-                <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-500 rounded-full flex items-center justify-center text-white font-bold text-lg">
                   {selectedChat.type === 'community' ? selectedChat.data.avatar : selectedChat.data.name.charAt(0)}
                 </div>
                 <div>
                   <div className="flex items-center space-x-2">
                     <h3 className="font-semibold text-slate-900 dark:text-white">{selectedChat.data.name}</h3>
                     {selectedChat.data.verified && (
-                      <ShieldCheckIcon className="w-4 h-4 text-cyan-500" />
+                      <ShieldCheckIcon className="w-4 h-4 text-orange-500" />
                     )}
                   </div>
                   <p className="text-xs text-slate-600 dark:text-slate-400">
@@ -509,12 +509,12 @@ const Chat = () => {
                       >
                         <div className={`max-w-md rounded-2xl px-4 py-2 ${
                           msg.sender.id === user.id
-                            ? 'bg-cyan-500 text-white'
+                            ? 'bg-orange-500 text-white'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white'
                         }`}>
                           <p className="text-sm">{msg.content}</p>
                           <p className={`text-xs mt-1 ${
-                            msg.sender.id === user.id ? 'text-cyan-100' : 'text-slate-500 dark:text-slate-400'
+                            msg.sender.id === user.id ? 'text-orange-100' : 'text-slate-500 dark:text-slate-400'
                           }`}>
                             {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>
@@ -532,7 +532,7 @@ const Chat = () => {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={() => setShowNewPost(!showNewPost)}
-                    className="w-full p-4 mb-6 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white rounded-xl font-medium transition-all flex items-center justify-center shadow-lg shadow-cyan-500/30"
+                    className="w-full p-4 mb-6 bg-gradient-to-r from-orange-500 to-orange-500 hover:from-orange-600 hover:to-orange-600 text-white rounded-xl font-medium transition-all flex items-center justify-center shadow-lg shadow-orange-500/30"
                   >
                     <PlusCircleIcon className="w-5 h-5 mr-2" />
                     Share Your Ride Story
@@ -551,7 +551,7 @@ const Chat = () => {
                           value={postInput}
                           onChange={(e) => setPostInput(e.target.value)}
                           placeholder="Share your experience, route tips, or ask the community..."
-                          className="w-full p-3 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-cyan-500 outline-none resize-none"
+                          className="w-full p-3 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-orange-500 outline-none resize-none"
                           rows="4"
                         />
                         <div className="flex items-center justify-between mt-3">
@@ -573,7 +573,7 @@ const Chat = () => {
                             >
                               Cancel
                             </button>
-                            <button className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors text-sm font-medium">
+                            <button className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors text-sm font-medium">
                               Post
                             </button>
                           </div>
@@ -589,19 +589,19 @@ const Chat = () => {
                         key={post.id}
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden hover:border-cyan-500 dark:hover:border-cyan-500 transition-all"
+                        className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden hover:border-orange-500 dark:hover:border-orange-500 transition-all"
                       >
                         {/* Post Header */}
                         <div className="p-4 flex items-center justify-between">
                           <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white font-bold">
+                            <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-500 rounded-full flex items-center justify-center text-white font-bold">
                               {post.author.name.charAt(0)}
                             </div>
                             <div>
                               <div className="flex items-center space-x-1">
                                 <h4 className="font-medium text-slate-900 dark:text-white text-sm">{post.author.name}</h4>
                                 {post.author.verified && (
-                                  <ShieldCheckIcon className="w-4 h-4 text-cyan-500" />
+                                  <ShieldCheckIcon className="w-4 h-4 text-orange-500" />
                                 )}
                               </div>
                               <p className="text-xs text-slate-600 dark:text-slate-400">{post.timestamp} • {post.community}</p>
@@ -641,7 +641,7 @@ const Chat = () => {
                           <div className="flex items-center space-x-4">
                             <button
                               onClick={() => handleUpvote(post.id)}
-                              className="flex items-center space-x-1 text-slate-600 dark:text-slate-400 hover:text-cyan-500 transition-colors"
+                              className="flex items-center space-x-1 text-slate-600 dark:text-slate-400 hover:text-orange-500 transition-colors"
                             >
                               <ArrowUpIcon className="w-5 h-5" />
                               <span className="text-sm font-medium">{post.upvotes}</span>
@@ -654,7 +654,7 @@ const Chat = () => {
                             </button>
                             <button
                               onClick={() => setSelectedPost(post)}
-                              className="flex items-center space-x-1 text-slate-600 dark:text-slate-400 hover:text-cyan-500 transition-colors"
+                              className="flex items-center space-x-1 text-slate-600 dark:text-slate-400 hover:text-orange-500 transition-colors"
                             >
                               <ChatBubbleOvalLeftEllipsisIcon className="w-5 h-5" />
                               <span className="text-sm font-medium">{post.comments}</span>
@@ -684,11 +684,11 @@ const Chat = () => {
                     onChange={(e) => setMessageInput(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                     placeholder="Type a message..."
-                    className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none"
+                    className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
                   />
                   <button
                     onClick={handleSendMessage}
-                    className="p-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors"
+                    className="p-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors"
                   >
                     <PaperAirplaneIcon className="w-5 h-5" />
                   </button>
@@ -699,7 +699,7 @@ const Chat = () => {
         ) : (
           /* Empty State */
           <div className="flex-1 flex flex-col items-center justify-center p-8">
-            <div className="w-24 h-24 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center mb-6">
+            <div className="w-24 h-24 bg-gradient-to-br from-orange-400 to-orange-500 rounded-full flex items-center justify-center mb-6">
               <UserGroupIcon className="w-12 h-12 text-white" />
             </div>
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-3">Welcome to Rider Network</h2>
@@ -709,7 +709,7 @@ const Chat = () => {
             <div className="flex gap-3">
               <button
                 onClick={() => setActiveTab('friends')}
-                className="px-6 py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg font-medium transition-colors"
+                className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors"
               >
                 Find Friends
               </button>
@@ -736,7 +736,7 @@ const Chat = () => {
                 </h3>
                 <div className="bg-white dark:bg-slate-800 rounded-xl p-4 mb-4">
                   <div className="flex flex-col items-center mb-4">
-                    <div className="w-20 h-20 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white font-bold text-2xl mb-3">
+                    <div className="w-20 h-20 bg-gradient-to-br from-orange-400 to-orange-500 rounded-full flex items-center justify-center text-white font-bold text-2xl mb-3">
                       {selectedChat.data.name.charAt(0)}
                     </div>
                     <h4 className="font-semibold text-slate-900 dark:text-white text-lg">{selectedChat.data.name}</h4>
@@ -755,7 +755,7 @@ const Chat = () => {
                   </div>
 
                   <div className="pt-3 border-t border-slate-200 dark:border-slate-700">
-                    <button className="w-full px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-sm font-medium transition-colors mb-2">
+                    <button className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors mb-2">
                       View Full Profile
                     </button>
                     <button className="w-full px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors">
@@ -769,7 +769,7 @@ const Chat = () => {
                   <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Shared Communities</h4>
                   <div className="space-y-2">
                     <div className="flex items-center space-x-2 text-xs">
-                      <div className="w-6 h-6 bg-gradient-to-br from-purple-400 to-pink-500 rounded flex items-center justify-center">🏍️</div>
+                      <div className="w-6 h-6 bg-gradient-to-br from-orange-400 to-red-500 rounded flex items-center justify-center">🏍️</div>
                       <span className="text-slate-700 dark:text-slate-300">Delhi Riders Club</span>
                     </div>
                   </div>
@@ -784,7 +784,7 @@ const Chat = () => {
                 
                 <div className="bg-white dark:bg-slate-800 rounded-xl p-4 mb-4">
                   <div className="flex items-center space-x-3 mb-4">
-                    <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-pink-500 rounded-lg flex items-center justify-center text-3xl">
+                    <div className="w-16 h-16 bg-gradient-to-br from-orange-400 to-red-500 rounded-lg flex items-center justify-center text-3xl">
                       {selectedChat.data.avatar}
                     </div>
                     <div>
@@ -814,19 +814,19 @@ const Chat = () => {
                   <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Community Rules</h4>
                   <ul className="space-y-2 text-xs text-slate-700 dark:text-slate-300">
                     <li className="flex items-start">
-                      <span className="text-cyan-500 mr-2">•</span>
+                      <span className="text-orange-500 mr-2">•</span>
                       Be respectful to all members
                     </li>
                     <li className="flex items-start">
-                      <span className="text-cyan-500 mr-2">•</span>
+                      <span className="text-orange-500 mr-2">•</span>
                       No spam or self-promotion
                     </li>
                     <li className="flex items-start">
-                      <span className="text-cyan-500 mr-2">•</span>
+                      <span className="text-orange-500 mr-2">•</span>
                       Share accurate safety information
                     </li>
                     <li className="flex items-start">
-                      <span className="text-cyan-500 mr-2">•</span>
+                      <span className="text-orange-500 mr-2">•</span>
                       Keep posts relevant to riding
                     </li>
                   </ul>
@@ -855,7 +855,7 @@ const Chat = () => {
         ) : (
           /* AI Assistant Placeholder */
           <div className="p-6">
-            <div className="bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl p-6 text-white text-center">
+            <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl p-6 text-white text-center">
               <BoltIcon className="w-12 h-12 mx-auto mb-3 opacity-80" />
               <h3 className="font-semibold mb-2">AI Assistant</h3>
               <p className="text-sm opacity-90">
@@ -870,3 +870,4 @@ const Chat = () => {
 }
 
 export default Chat
+

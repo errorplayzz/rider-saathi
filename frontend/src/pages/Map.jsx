@@ -1,12 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle, Polyline } from 'react-leaflet'
-import { motion, AnimatePresence } from 'framer-motion'
+import gsap from 'gsap';
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
-import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import {
+  MagnifyingGlassIcon, XMarkIcon, HomeIcon, BriefcaseIcon, MicrophoneIcon,
+  EyeIcon, EyeSlashIcon, BeakerIcon, SparklesIcon, BuildingOfficeIcon,
+  WrenchScrewdriverIcon, PlusCircleIcon, ShieldExclamationIcon,
+  ViewfinderCircleIcon, MapIcon, Square3Stack3DIcon, MapPinIcon, RocketLaunchIcon
+} from '@heroicons/react/24/outline';
 import {
   getActiveEmergencyAlerts,
   createEmergencyAlert,
@@ -23,52 +28,50 @@ L.Icon.Default.mergeOptions({
 })
 
 // Custom colored marker icons for different map points
-const userIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-})
+// Premium Custom Map Markers replacing generic Leaflet pins
+const userPremiumIcon = new L.divIcon({
+  className: 'bg-transparent border-none',
+  html: `<div class="relative w-8 h-8 flex items-center justify-center">
+          <div class="absolute inset-0 bg-white/20 rounded-full animate-[ping_2s_ease-in-out_infinite]"></div>
+          <div class="w-4 h-4 bg-white rounded-full shadow-[0_0_15px_rgba(255,255,255,1)] border-[3px] border-[#090909]"></div>
+         </div>`,
+  iconSize: [32, 32], iconAnchor: [16, 16], popupAnchor: [0, -16]
+});
 
-// Friend rider icon (cyan/blue)
-const friendRiderIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-})
+const destinationIcon = new L.divIcon({
+  className: 'bg-transparent border-none',
+  html: `<div class="w-6 h-6 rounded-full bg-[#B08968] shadow-[0_0_20px_rgba(176,137,104,0.6)] border-2 border-white/20 animate-bounce"></div>`,
+  iconSize: [24, 24], iconAnchor: [12, 24], popupAnchor: [0, -24]
+});
 
-// Stranger rider icon (amber/yellow)
-const strangerRiderIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-gold.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-})
+const emergencyPremiumIcon = new L.divIcon({
+  className: 'bg-transparent border-none',
+  html: `<div class="relative w-10 h-10 flex items-center justify-center">
+          <div class="absolute inset-0 bg-red-500/40 rounded-full animate-[ping_1.5s_ease-in-out_infinite]"></div>
+          <div class="w-5 h-5 bg-red-500 rounded-full shadow-[0_0_25px_rgba(239,68,68,1)] border-2 border-white/30"></div>
+         </div>`,
+  iconSize: [40, 40], iconAnchor: [20, 20], popupAnchor: [0, -20]
+});
 
-const emergencyIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-})
+const poiPremiumIcon = new L.divIcon({
+  className: 'bg-transparent border-none',
+  html: `<div class="w-4 h-4 rounded-full bg-slate-300 shadow-[0_0_10px_rgba(255,255,255,0.4)] border border-white/10 hover:scale-150 transition-transform duration-300"></div>`,
+  iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -8]
+});
 
-const fuelIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-})
+const friendPremiumIcon = new L.divIcon({
+  className: 'bg-transparent border-none',
+  html: `<div class="w-4 h-4 rounded-full bg-[#B08968] shadow-[0_0_15px_rgba(176,137,104,0.6)] border border-[#090909] hover:scale-150 transition-transform duration-300"></div>`,
+  iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -8]
+});
+
+const strangerPremiumIcon = new L.divIcon({
+  className: 'bg-transparent border-none',
+  html: `<div class="w-4 h-4 rounded-full bg-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.6)] border border-[#090909] hover:scale-150 transition-transform duration-300"></div>`,
+  iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -8]
+});
+
+
 
 // Component to forward map events (click, locationfound) to the parent
 const MapEventHandler = ({ onLocationUpdate, onMapClick }) => {
@@ -939,44 +942,88 @@ const Map = () => {
     )
   }
 
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    let ctx = gsap.context(() => {
+      // Entrance animations for panels
+      gsap.fromTo(".panel-top-left", 
+        { opacity: 0, x: -30, filter: 'blur(10px)' }, 
+        { opacity: 1, x: 0, filter: 'blur(0px)', duration: 0.8, ease: "power3.out", delay: 0.2 }
+      );
+      gsap.fromTo(".panel-top-center", 
+        { opacity: 0, y: -20 }, 
+        { opacity: 1, y: 0, duration: 0.6, ease: "power3.out", delay: 0.3 }
+      );
+      gsap.fromTo(".panel-top-right", 
+        { opacity: 0, x: 30, filter: 'blur(10px)' }, 
+        { opacity: 1, x: 0, filter: 'blur(0px)', duration: 0.8, ease: "power3.out", delay: 0.4 }
+      );
+      gsap.fromTo(".panel-bottom-left", 
+        { opacity: 0, y: 30 }, 
+        { opacity: 1, y: 0, duration: 0.8, ease: "power3.out", delay: 0.5 }
+      );
+      gsap.fromTo(".panel-bottom-center", 
+        { opacity: 0, y: 40, scale: 0.95 }, 
+        { opacity: 1, y: 0, scale: 1, duration: 0.7, ease: "back.out(1.2)", delay: 0.6 }
+      );
+      gsap.fromTo(".panel-bottom-right", 
+        { opacity: 0, scale: 0.5 }, 
+        { opacity: 1, scale: 1, duration: 0.8, ease: "elastic.out(1, 0.5)", delay: 0.7 }
+      );
+    }, containerRef);
+    return () => ctx.revert();
+  }, [showControls]);
+
   return (
-    // Reserve space for the fixed navbar (h-16) so the map doesn't sit under it
-    <div className="relative bg-ink" style={{ height: 'calc(100vh - 4rem)', marginTop: '4rem' }}>
-      {/* Search Bar */}
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1002] w-full max-w-md px-4">
-        <div className="relative">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search location..."
-            className="w-full px-4 py-3 pl-12 pr-10 bg-white dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl shadow-2xl ring-1 ring-slate-200 dark:ring-slate-700 focus:ring-2 focus:ring-cyan-500 outline-none"
-          />
-          <MagnifyingGlassIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
-          {searchQuery && (
-            <button
-              onClick={() => {
-                setSearchQuery('')
-                setShowSearchResults(false)
-              }}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full"
-            >
-              <XMarkIcon className="w-5 h-5 text-slate-400" />
+    <div ref={containerRef} className="relative bg-[#090909] font-sans overflow-hidden" style={{ height: 'calc(100vh - 4rem)', marginTop: '4rem' }}>
+      
+      {/* Search Panel (Top Left) */}
+      <div className="panel-top-left absolute top-6 left-6 z-[1002] w-full max-w-sm pointer-events-auto">
+        <div className="bg-[#111111]/80 backdrop-blur-3xl rounded-[24px] p-2 ring-1 ring-white/10 shadow-[0_16px_40px_rgba(0,0,0,0.5)]">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Where to?"
+              className="w-full bg-transparent text-[#F5F5F7] px-4 py-3 pl-12 rounded-xl focus:bg-white/5 outline-none transition-colors placeholder:text-[#86868B]"
+            />
+            <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#86868B]" />
+            <button className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-white/10 rounded-full transition-colors group">
+              <MicrophoneIcon className="w-4 h-4 text-[#86868B] group-hover:text-[#B08968]" />
             </button>
-          )}
+            {searchQuery && (
+              <button
+                onClick={() => { setSearchQuery(''); setShowSearchResults(false); }}
+                className="absolute right-10 top-1/2 -translate-y-1/2 p-1.5 hover:bg-white/10 rounded-full transition-colors"
+              >
+                <XMarkIcon className="w-4 h-4 text-[#86868B]" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex justify-between mt-2 px-2 pb-2 gap-2">
+            <button className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-xs text-[#F5F5F7]">
+              <HomeIcon className="w-3.5 h-3.5 text-[#B08968]" /> Home
+            </button>
+            <button className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-xs text-[#F5F5F7]">
+              <BriefcaseIcon className="w-3.5 h-3.5 text-[#B08968]" /> Work
+            </button>
+          </div>
           
           {/* Search Results Dropdown */}
           {showSearchResults && searchResults.length > 0 && (
-            <div className="absolute top-full mt-2 w-full bg-white dark:bg-slate-900 rounded-xl shadow-2xl ring-1 ring-slate-200 dark:ring-slate-700 max-h-96 overflow-y-auto">
+            <div className="mt-2 border-t border-white/5 pt-2 max-h-64 overflow-y-auto custom-scrollbar">
               {searchResults.map((result, index) => (
                 <button
                   key={index}
                   onClick={() => selectSearchResult(result)}
-                  className="w-full px-4 py-3 text-left hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors first:rounded-t-xl last:rounded-b-xl"
+                  className="w-full px-4 py-3 text-left hover:bg-white/5 transition-colors rounded-xl flex flex-col gap-1"
                 >
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">{result.display_name}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    {result.type} • {result.class}
+                  <p className="text-sm font-medium text-[#F5F5F7] truncate">{result.display_name}</p>
+                  <p className="text-[10px] text-[#86868B] uppercase tracking-widest truncate">
+                    {result.type}
                   </p>
                 </button>
               ))}
@@ -985,762 +1032,235 @@ const Map = () => {
         </div>
       </div>
 
-      {/* Map Container */}
-      <MapContainer
-        center={[userLocation.lat, userLocation.lng]}
-        zoom={13}
-        style={{ height: '100%', width: '100%' }}
-        className="map-shell"
-        whenCreated={(mapInstance) => { mapRef.current = mapInstance }}
-      >
-        <TileLayer
-          key={theme}
-          url={isDark
-            ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-            : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-          }
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        />
+      {/* Dynamic Status Pill (Top Center) */}
+      <div className="panel-top-center absolute top-6 left-1/2 transform -translate-x-1/2 z-[1002] pointer-events-auto">
+        <div className="bg-[#111111]/90 backdrop-blur-3xl rounded-full px-6 py-3 flex items-center gap-6 ring-1 ring-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.6)]">
+          <button 
+            onClick={() => setShowControls(!showControls)}
+            className="flex items-center gap-2 text-xs font-medium hover:opacity-80 transition-opacity"
+          >
+            {showControls ? <EyeSlashIcon className="w-4 h-4 text-[#86868B]" /> : <EyeIcon className="w-4 h-4 text-[#86868B]" />}
+            <span className="text-[#86868B]">Controls</span>
+          </button>
+          <div className="w-[1px] h-4 bg-white/10" />
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full shadow-[0_0_8px_currentColor] ${userLocation ? 'bg-green-500 text-green-500' : 'bg-orange-500 text-orange-500'}`} />
+            <span className="text-xs font-medium text-[#F5F5F7] uppercase tracking-widest">{userLocation ? 'Live GPS' : 'Searching'}</span>
+          </div>
+          <div className="w-[1px] h-4 bg-white/10" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-[#B08968]">Sport Mode</span>
+          </div>
+        </div>
+      </div>
 
-        <MapEventHandler onMapClick={handleMapClick} />
-
-        {/* Route Polyline */}
-        {routeCoordinates.length > 0 && (
-          <Polyline
-            positions={routeCoordinates}
-            pathOptions={{
-              color: '#06b6d4',
-              weight: 4,
-              opacity: 0.7
-            }}
-          />
-        )}
-
-        {/* User location marker */}
-        <Circle
-          center={[userLocation.lat, userLocation.lng]}
-          radius={Math.min(accuracy || 40, 80)}
-          pathOptions={{
-            color: isDark ? 'rgba(148, 163, 184, 0.55)' : 'rgba(71, 85, 105, 0.35)',
-            fillColor: isDark ? 'rgba(148, 163, 184, 0.18)' : 'rgba(71, 85, 105, 0.12)',
-            fillOpacity: 0.6,
-            weight: 1
-          }}
-        />
-        <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon}>
-          <Popup>
-            <div className="text-center">
-              <h3 className="font-semibold text-alabaster">Your Location</h3>
-              <p className="text-sm text-dusty">
-                {user?.name || 'Unknown User'}
-              </p>
-              {weather && (
-                <div className="mt-2 p-2 bg-ink/70 rounded-lg ring-1 ring-dusty/10">
-                  <p className="text-xs text-dusty">
-                    {weather.current.temperature}°C - {weather.current.description}
-                  </p>
-                  <p className="text-xs text-dusty/80">
-                    Wind: {weather.current.windSpeed} m/s
-                  </p>
-                </div>
-              )}
+      {/* Quick POI Chips (Top Right) */}
+      <div className="panel-top-right absolute top-6 right-6 z-[1002] pointer-events-auto flex flex-col gap-3">
+        <div className="text-[10px] font-semibold text-right text-[#86868B] uppercase tracking-[0.2em] mb-1 mr-1">Find Places</div>
+        {[
+          { type: 'fuel', label: 'Fuel', icon: BeakerIcon },
+          { type: 'food', label: 'Food', icon: SparklesIcon },
+          { type: 'hotels', label: 'Hotels', icon: BuildingOfficeIcon },
+          { type: 'repair', label: 'Repair', icon: WrenchScrewdriverIcon },
+          { type: 'medical', label: 'Medical', icon: PlusCircleIcon }
+        ].map(poi => (
+          <button
+            key={poi.type}
+            onClick={() => handlePOITypeChange(poi.type)}
+            className={`group flex items-center justify-end gap-3 px-4 py-2.5 rounded-full backdrop-blur-xl ring-1 transition-all duration-300 hover:scale-105 ${
+              selectedPOIType === poi.type 
+                ? 'bg-[#B08968] ring-[#B08968]/50 text-[#090909] shadow-[0_0_20px_rgba(176,137,104,0.3)]' 
+                : 'bg-[#111111]/80 ring-white/10 text-[#F5F5F7] hover:bg-[#1a1a1a]'
+            }`}
+          >
+            <span className="text-xs font-medium">{poi.label}</span>
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center ${selectedPOIType === poi.type ? 'bg-black/20' : 'bg-white/5 group-hover:bg-[#B08968]/20'}`}>
+              <poi.icon className={`w-3.5 h-3.5 ${selectedPOIType === poi.type ? 'text-black' : 'text-[#B08968]'}`} />
             </div>
-          </Popup>
-        </Marker>
+          </button>
+        ))}
+      </div>
 
-        {/* Destination marker */}
-        {destination && (
-          <Marker position={[destination.lat, destination.lng]}>
-            <Popup>
-              <div className="text-center max-w-xs">
-                <h3 className="font-semibold text-slate-900 dark:text-white">Destination</h3>
-                {destination.name && (
-                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">{destination.name}</p>
-                )}
-                <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">
-                  {destination.lat.toFixed(4)}, {destination.lng.toFixed(4)}
-                </p>
-                {routeData && (
-                  <div className="mt-2 p-2 bg-cyan-50 dark:bg-cyan-900/30 rounded-lg">
-                    <p className="text-xs text-cyan-700 dark:text-cyan-300">
-                      📍 {(routeData.distance / 1000).toFixed(1)} km
-                    </p>
-                    <p className="text-xs text-cyan-700 dark:text-cyan-300">
-                      ⏱️ {Math.round(routeData.duration / 60)} min
-                    </p>
-                  </div>
-                )}
+      {/* Live Ride HUD (Bottom Left) */}
+      {showControls && (
+        <div className="panel-bottom-left absolute bottom-28 left-6 z-[1002] pointer-events-auto">
+          <div className="bg-[#111111]/80 backdrop-blur-3xl rounded-[28px] p-6 ring-1 ring-white/10 shadow-[0_24px_48px_rgba(0,0,0,0.6)] w-72 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-[#B08968]/10 to-transparent opacity-20 pointer-events-none" />
+            <p className="text-[10px] font-semibold text-[#86868B] uppercase tracking-[0.2em] mb-4">Ride Telemetry</p>
+            
+            <div className="flex items-baseline gap-2 mb-6">
+              <span className="text-5xl font-semibold tracking-tighter text-[#F5F5F7]">0</span>
+              <span className="text-sm font-medium text-[#86868B]">km/h</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-y-5 gap-x-4">
+              <div>
+                <p className="text-[10px] text-[#86868B] uppercase tracking-widest mb-1">Time</p>
+                <p className="text-sm font-medium text-[#F5F5F7]">{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-[#86868B] uppercase tracking-widest mb-1">Network</p>
+                <p className="text-sm font-medium text-[#F5F5F7]">{nearbyRiders.length} nearby</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-[#86868B] uppercase tracking-widest mb-1">Weather</p>
+                <p className="text-sm font-medium text-[#F5F5F7]">{weather ? `${weather.current.temperature}°C` : '--'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-[#86868B] uppercase tracking-widest mb-1">Sharing</p>
                 <button
-                  onClick={() => {
-                    setDestination(null)
-                    setRouteData(null)
-                    setRouteCoordinates([])
-                    setShowRoutePanel(false)
-                  }}
-                  className="mt-2 px-3 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                  onClick={() => toggleLocationSharing(!locationSharingEnabled)}
+                  className={`text-xs font-medium px-2 py-0.5 rounded-md ${locationSharingEnabled ? 'bg-[#B08968]/20 text-[#B08968]' : 'bg-white/10 text-[#86868B]'}`}
                 >
-                  Clear
+                  {locationSharingEnabled ? 'Active' : 'Paused'}
                 </button>
               </div>
-            </Popup>
-          </Marker>
-        )}
-
-        {/* POI markers */}
-        {nearbyPOIs.map((poi) => (
-          <Marker
-            key={poi.id}
-            position={[poi.coordinates[1], poi.coordinates[0]]}
-            icon={fuelIcon}
-          >
-            <Popup>
-              <div className="text-center max-w-xs">
-                <h3 className="font-semibold text-alabaster">{poi.name}</h3>
-                <p className="text-sm text-dusty">{poi.address}</p>
-                <p className="text-xs text-dusty/80">
-                  Distance: {Math.round(poi.distance)} m
-                </p>
-                {poi.phone && (
-                  <p className="text-xs text-dusty">📞 {poi.phone}</p>
-                )}
-                {poi.openingHours && (
-                  <p className="text-xs text-dusty/80">🕒 {poi.openingHours}</p>
-                )}
-              </div>
-            </Popup>
-          </Marker>
-        ))}
-
-        {/* Emergency alert markers */}
-        {emergencyAlerts.filter(alert => alert.location && alert.location.coordinates && alert.location.coordinates.length >= 2).map((alert) => (
-          <Marker
-            key={alert.id}
-            position={[alert.location.coordinates[1], alert.location.coordinates[0]]}
-            icon={emergencyIcon}
-          >
-            <Popup>
-              <div className="text-center max-w-xs">
-                <h3 className="font-semibold text-red-400">🚨 {alert.type.toUpperCase()}</h3>
-                <p className="text-sm text-dusty">{alert.description}</p>
-                <p className="text-xs text-dusty/80">
-                  Distance: {alert.distance ? Math.round(alert.distance) : 'N/A'} m
-                </p>
-                <p className="text-xs text-dusty/80">
-                  Reported: {new Date(alert.createdAt).toLocaleTimeString()}
-                </p>
-                <button
-                  onClick={async () => {
-                    // Handle emergency response
-                    if (confirm('Respond to this emergency?')) {
-                      try {
-                        await respondToEmergency(alert.id, user.id, {
-                          message: 'On my way to help',
-                          estimated_arrival_minutes: 10
-                        })
-                        alert('Response sent!')
-                      } catch (error) {
-                        console.error('Response error:', error)
-                        alert('Failed to send response')
-                      }
-                    }
-                  }}
-                  className="mt-2 px-3 py-1 text-xs rounded-lg bg-red-500/15 text-red-300 ring-1 ring-red-500/30 hover:bg-red-500/25 transition-colors"
-                >
-                  Respond
-                </button>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
-
-        {/* Other riders markers (active rides) */}
-        {/** We'll render markers for otherRiders stored via ride-start events **/}
-        {/** Build array from local window-dispatched state: read from window.__otherRiders if present **/}
-        {Object.values(otherRiders).map((r) => {
-          if (!r || !r.location || !r.shareLocation) return null
-          const lat = r.location.lat || r.location.latitude
-          const lng = r.location.lng || r.location.longitude
-          if (!lat || !lng) return null
-          const dist = haversineDistance({ lat: userLocation.lat, lng: userLocation.lng }, { lat, lng })
-          return (
-            <Marker key={`rider-${r.user.id}`} position={[lat, lng]} icon={userIcon}>
-              <Popup>
-                <div className="text-center max-w-xs">
-                  {dist <= 1000 ? (
-                    <>
-                      <h3 className="font-semibold text-alabaster">{r.user.name}</h3>
-                      <p className="text-sm text-dusty">{r.user.bike || 'Bike'}</p>
-                      <p className="text-xs text-dusty/80">{Math.round(dist)} m away</p>
-                      <div className="mt-2 text-xs text-dusty">
-                        <p>Nearby — within 1 km</p>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <h3 className="font-semibold text-alabaster">Rider nearby</h3>
-                      <p className="text-xs text-dusty/80">{Math.round(dist)} m away</p>
-                    </>
-                  )}
-                </div>
-              </Popup>
-            </Marker>
-          )
-        })}
-
-        {/* ═══════════════════════════════════════════════════════════════ */}
-        {/* REAL-TIME NEARBY RIDERS - Friend vs Stranger Visibility */}
-        {/* ═══════════════════════════════════════════════════════════════ */}
-        {nearbyRiders.map((rider) => {
-          if (!rider.location) return null
-          
-          const riderIcon = rider.isFriend ? friendRiderIcon : strangerRiderIcon
-          const statusEmoji = rider.status === 'moving' ? '🏍️' : rider.status === 'stopped' ? '⏸️' : '⏹️'
-          
-          return (
-            <Marker
-              key={`nearby-rider-${rider.userId}`}
-              position={[rider.location.lat, rider.location.lng]}
-              icon={riderIcon}
-            >
-              <Popup className="rider-popup">
-                <div className="text-center max-w-xs">
-                  {rider.isFriend ? (
-                    // Friend: Full information
-                    <>
-                      <div className="flex items-center justify-center space-x-2 mb-2">
-                        <h3 className="font-semibold text-alabaster">{rider.name}</h3>
-                        <span className="text-lg">{statusEmoji}</span>
-                      </div>
-                      {rider.bike?.model && (
-                        <p className="text-sm text-dusty">{rider.bike.model}</p>
-                      )}
-                      <div className="mt-2 space-y-1 text-xs text-dusty">
-                        <p className="font-medium text-cyan-400">
-                          📍 {rider.distanceText} {rider.direction}
-                        </p>
-                        {rider.speed > 0 && (
-                          <p>Speed: {Math.round(rider.speed)} km/h</p>
-                        )}
-                        <p className="text-cyan-300/70">✓ Friend</p>
-                      </div>
-                    </>
-                  ) : (
-                    // Stranger: Limited information
-                    <>
-                      <div className="flex items-center justify-center space-x-2 mb-2">
-                        <h3 className="font-semibold text-alabaster">{rider.name}</h3>
-                        <span className="text-lg">{statusEmoji}</span>
-                      </div>
-                      <div className="mt-2 space-y-1 text-xs text-dusty">
-                        <p className="font-medium text-amber-400">
-                          📍 {rider.distanceText} {rider.direction}
-                        </p>
-                        <p className="text-amber-300/70">👤 Nearby Rider</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </Popup>
-            </Marker>
-          )
-        })}
-        {/* ═══════════════════════════════════════════════════════════════ */}
-        {/* END REAL-TIME NEARBY RIDERS */}
-        {/* ═══════════════════════════════════════════════════════════════ */}
-
-        {/* If current user has turned off location sharing, show a small corner summary visible only to them */}
-        {profile?.preferences && profile.preferences.shareLocation === false && (
-          <div className="absolute top-24 right-4 z-[1002]">
-            <div className="bg-dusk p-3 rounded-xl text-sm max-w-xs shadow-card ring-1 ring-dusty/20">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-full bg-ink flex items-center justify-center text-alabaster ring-1 ring-dusty/20">
-                  {(profile?.name || user?.user_metadata?.name || 'U').charAt(0).toUpperCase()
-                  }</div>
-                <div>
-                  <div className="font-semibold text-alabaster">You (hidden)</div>
-                  <div className="text-xs text-dusty">{profile?.bike_model || 'Bike'}</div>
-                </div>
-              </div>
-              <p className="text-xs text-dusty mt-2">Location sharing is OFF — only you can see your marker.</p>
             </div>
           </div>
-        )}
-      </MapContainer>
+        </div>
+      )}
 
-      {/* Toggle Button */}
-      <button
-        onClick={() => setShowControls(!showControls)}
-        className="absolute top-4 left-4 z-[1001] bg-dusk text-dusty p-3 rounded-full shadow-card ring-1 ring-dusty/20 hover:text-alabaster transition-all"
-        title={showControls ? "Hide Controls" : "Show Controls"}
-      >
-        {showControls ? (
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        ) : (
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        )}
-      </button>
-
-      {/* Control Panel */}
+      {/* Navigation Dock (Bottom Center) */}
       {showControls && (
-        <div className="absolute top-20 left-4 z-[1000]">
-          <motion.div
-            initial={{ x: -100, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: -100, opacity: 0 }}
-            className="bg-dusk rounded-2xl p-4 space-y-4 max-w-xs shadow-card ring-1 ring-dusty/20"
-          >
-            {/* Weather Info */}
-            {weather && (
-              <div className="text-center">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-dusty mb-2">Weather</h3>
-                <div className="flex items-center justify-between text-xs text-dusty">
-                  <span>{weather.current.temperature}°C</span>
-                  <span className="capitalize">{weather.current.description}</span>
-                </div>
-                {!weather.rideConditions.isGoodForRiding && (
-                  <p className="text-xs text-red-400 mt-1">
-                    ⚠️ Poor riding conditions
-                  </p>
-                )}
-              </div>
-            )}
+        <div className="panel-bottom-center absolute bottom-8 left-1/2 transform -translate-x-1/2 z-[1002] pointer-events-auto">
+          <div className="bg-[#111111]/90 backdrop-blur-3xl rounded-[24px] p-2 ring-1 ring-white/10 shadow-[0_24px_48px_rgba(0,0,0,0.6)] flex items-center gap-2">
+            
+            <button className="flex flex-col items-center justify-center w-16 h-16 rounded-[18px] hover:bg-white/5 transition-colors group">
+              <ViewfinderCircleIcon className="w-6 h-6 text-[#86868B] group-hover:text-[#F5F5F7] mb-1" />
+              <span className="text-[9px] font-medium text-[#86868B] group-hover:text-[#F5F5F7]">Center</span>
+            </button>
+            
+            <button className="flex flex-col items-center justify-center w-16 h-16 rounded-[18px] hover:bg-white/5 transition-colors group">
+              <MapIcon className="w-6 h-6 text-[#86868B] group-hover:text-[#F5F5F7] mb-1" />
+              <span className="text-[9px] font-medium text-[#86868B] group-hover:text-[#F5F5F7]">3D View</span>
+            </button>
+            
+            <div className="w-[1px] h-8 bg-white/10 mx-2" />
+            
+            <button className="relative overflow-hidden group flex items-center justify-center gap-3 px-8 h-16 rounded-[20px] bg-[#B08968] hover:bg-[#c29875] transition-colors shadow-[0_0_20px_rgba(176,137,104,0.3)]">
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-shimmer" />
+              <RocketLaunchIcon className="w-5 h-5 text-black" />
+              <span className="text-sm font-semibold text-black">Start Ride</span>
+            </button>
 
-            {/* POI Filter */}
-            <div>
-              <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-dusty mb-2">Find Nearby</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { type: 'fuel', label: '⛽ Fuel', icon: '⛽' },
-                  { type: 'repair', label: '🔧 Repair', icon: '🔧' },
-                  { type: 'medical', label: '🏥 Medical', icon: '🏥' },
-                  { type: 'food', label: '🍕 Food', icon: '🍕' }
-                ].map(({ type, label, icon }) => (
-                  <button
-                    key={type}
-                    onClick={() => handlePOITypeChange(type)}
-                    className={`p-2 rounded-lg text-xs transition-all ${selectedPOIType === type
-                        ? 'bg-accent/80 text-ink shadow-button'
-                        : 'bg-ink/60 text-dusty hover:bg-ink/80 ring-1 ring-dusty/10'
-                      }`}
-                  >
-                    {icon}
-                  </button>
-                ))}
-              </div>
-              {isLoading && (
-                <div className="loading-dots mt-2">
-                  <div></div>
-                  <div></div>
-                  <div></div>
-                </div>
-              )}
-            </div>
+            <div className="w-[1px] h-8 bg-white/10 mx-2" />
 
-            {/* ═══════════════════════════════════════════════════════════════ */}
-            {/* RIDER TRACKING CONTROLS */}
-            {/* ═══════════════════════════════════════════════════════════════ */}
-            <div>
-              <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-dusty mb-2">
-                🏍️ Nearby Riders
-              </h3>
-              
-              {/* Location Sharing Toggle */}
-              <div className="mb-3 p-2 rounded-lg bg-ink/40 ring-1 ring-dusty/10">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-dusty">Location Sharing</span>
-                  <button
-                    onClick={() => toggleLocationSharing(!locationSharingEnabled)}
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                      locationSharingEnabled ? 'bg-accent' : 'bg-ink'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        locationSharingEnabled ? 'translate-x-5' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-                
-                {locationSharingEnabled && (
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-dusty/70">Visible to friends</span>
-                      <button
-                        onClick={() => updateVisibilitySettings({
-                          ...visibilitySettings,
-                          visibleToFriends: !visibilitySettings.visibleToFriends
-                        })}
-                        className={`text-xs px-2 py-0.5 rounded ${
-                          visibilitySettings.visibleToFriends 
-                            ? 'text-cyan-400 bg-cyan-400/10' 
-                            : 'text-dusty/50 bg-ink/30'
-                        }`}
-                      >
-                        {visibilitySettings.visibleToFriends ? 'ON' : 'OFF'}
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-dusty/70">Visible to nearby</span>
-                      <button
-                        onClick={() => updateVisibilitySettings({
-                          ...visibilitySettings,
-                          visibleToNearby: !visibilitySettings.visibleToNearby
-                        })}
-                        className={`text-xs px-2 py-0.5 rounded ${
-                          visibilitySettings.visibleToNearby 
-                            ? 'text-amber-400 bg-amber-400/10' 
-                            : 'text-dusty/50 bg-ink/30'
-                        }`}
-                      >
-                        {visibilitySettings.visibleToNearby ? 'ON' : 'OFF'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+            <button className="flex flex-col items-center justify-center w-16 h-16 rounded-[18px] hover:bg-white/5 transition-colors group">
+              <Square3Stack3DIcon className="w-6 h-6 text-[#86868B] group-hover:text-[#F5F5F7] mb-1" />
+              <span className="text-[9px] font-medium text-[#86868B] group-hover:text-[#F5F5F7]">Layers</span>
+            </button>
 
-              {/* Nearby Riders Stats */}
-              {locationSharingEnabled && nearbyRiders.length > 0 && (
-                <div className="text-xs space-y-1">
-                  <div className="flex justify-between text-dusty">
-                    <span className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-                      Friends
-                    </span>
-                    <span className="font-semibold text-cyan-400">
-                      {nearbyRiders.filter(r => r.isFriend).length}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-dusty">
-                    <span className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-                      Nearby
-                    </span>
-                    <span className="font-semibold text-amber-400">
-                      {nearbyRiders.filter(r => !r.isFriend).length}
-                    </span>
-                  </div>
-                  <div className="mt-2 pt-2 border-t border-dusty/10">
-                    <button
-                      onClick={fetchNearbyRiders}
-                      className="w-full text-xs text-dusty hover:text-alabaster transition-colors"
-                    >
-                      🔄 Refresh
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {locationSharingEnabled && nearbyRiders.length === 0 && (
-                <p className="text-xs text-dusty/60 text-center py-2">
-                  No riders nearby
-                </p>
-              )}
-
-              {!locationSharingEnabled && (
-                <p className="text-xs text-dusty/60 text-center py-2">
-                  Enable to see nearby riders
-                </p>
-              )}
-            </div>
-            {/* ═══════════════════════════════════════════════════════════════ */}
-            {/* END RIDER TRACKING CONTROLS */}
-            {/* ═══════════════════════════════════════════════════════════════ */}
-
-            {/* Emergency Buttons */}
-            <div>
-              <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-red-400 mb-2">Emergency</h3>
-              <div className="space-y-2">
-                <button
-                  onClick={() => sendEmergencyAlert('accident')}
-                  className="w-full p-2 text-xs rounded-lg bg-red-50 text-red-700 ring-1 ring-red-200/80 hover:bg-red-100 dark:bg-red-500/20 dark:text-red-200 dark:ring-red-500/40 dark:shadow-[0_10px_26px_-18px_rgba(220,38,38,0.65)] transition-colors"
-                >
-                  🚨 Accident Alert
-                </button>
-                <button
-                  onClick={() => sendEmergencyAlert('breakdown')}
-                  className="w-full p-2 text-xs rounded-lg bg-orange-50 text-orange-700 ring-1 ring-orange-200/80 hover:bg-orange-100 dark:bg-orange-500/20 dark:text-orange-200 dark:ring-orange-500/40 dark:shadow-[0_10px_26px_-18px_rgba(249,115,22,0.6)] transition-colors"
-                >
-                  🛠️ Breakdown Help
-                </button>
-                <button
-                  onClick={() => sendEmergencyAlert('medical')}
-                  className="w-full p-2 text-xs rounded-lg bg-purple-50 text-purple-700 ring-1 ring-purple-200/80 hover:bg-purple-100 dark:bg-purple-500/20 dark:text-purple-200 dark:ring-purple-500/40 dark:shadow-[0_10px_26px_-18px_rgba(168,85,247,0.6)] transition-colors"
-                >
-                  🏥 Medical Emergency
-                </button>
-              </div>
-            </div>
-
-            {/* Route Info */}
-            {routeData && (
-              <div>
-                <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-dusty mb-2">Route</h3>
-                <div className="text-xs space-y-1 text-dusty">
-                  <p>📍 Distance: {(routeData.distance / 1000).toFixed(1)} km</p>
-                  <p>⏱️ Duration: {Math.round(routeData.duration / 60)} min</p>
-                  <button
-                    onClick={() => {
-                      setDestination(null)
-                      setRouteData(null)
-                    }}
-                    className="w-full p-1 rounded-lg bg-ink text-dusty hover:text-alabaster transition-colors"
-                  >
-                    Clear Route
-                  </button>
-                </div>
-              </div>
-            )}
-          </motion.div>
+            <button className="flex flex-col items-center justify-center w-16 h-16 rounded-[18px] hover:bg-white/5 transition-colors group">
+              <MapPinIcon className="w-6 h-6 text-[#86868B] group-hover:text-[#F5F5F7] mb-1" />
+              <span className="text-[9px] font-medium text-[#86868B] group-hover:text-[#F5F5F7]">Traffic</span>
+            </button>
+            
+          </div>
         </div>
       )}
 
-      {/* Emergency Alerts Counter */}
-      {showControls && emergencyAlerts.length > 0 && (
-        <div className="absolute top-20 right-4 z-[1000]">
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            className="bg-dusk rounded-full p-3 text-center shadow-card ring-1 ring-red-500/30"
-          >
-            <div className="text-red-400 text-lg font-bold">🚨</div>
-            <div className="text-xs text-red-300">
-              {emergencyAlerts.length} alerts
-            </div>
-          </motion.div>
-        </div>
-      )}
+      {/* SOS Button (Bottom Right) */}
+      <div className="panel-bottom-right absolute bottom-8 right-8 z-[1002] pointer-events-auto">
+        <button 
+          onClick={() => sendEmergencyAlert('medical')}
+          className="relative group flex items-center justify-center w-16 h-16 rounded-full bg-[#111111]/80 backdrop-blur-xl ring-1 ring-red-500/50 hover:bg-red-500/20 transition-all shadow-[0_0_30px_rgba(239,68,68,0.3)] hover:scale-110"
+        >
+          <div className="absolute inset-0 rounded-full border border-red-500/30 animate-[ping_2.5s_ease-in-out_infinite]" />
+          <ShieldExclamationIcon className="w-7 h-7 text-red-500" />
+        </button>
+      </div>
 
-      {/* Instructions */}
-      {showControls && !routeData && (
-        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-[1000]">
-          <motion.div
-            initial={{ y: 100, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            className="bg-white dark:bg-slate-900 rounded-full px-6 py-3 text-center shadow-2xl ring-1 ring-slate-200 dark:ring-slate-700"
-          >
-            <p className="text-sm text-slate-700 dark:text-slate-300">
-              🔍 Search location or click on map to set destination
-            </p>
-          </motion.div>
-        </div>
-      )}
+      {/* The Edge-to-Edge Map */}
+      <div className="absolute inset-3 rounded-[32px] overflow-hidden shadow-[0_24px_64px_rgba(0,0,0,0.8)] z-0 bg-[#0a0a0a]">
+        <MapContainer
+          center={[userLocation.lat, userLocation.lng]}
+          zoom={14}
+          zoomControl={false} // Hide default zoom controls for premium feel
+          style={{ height: '100%', width: '100%' }}
+          className="map-shell"
+          whenCreated={(mapInstance) => { mapRef.current = mapInstance }}
+        >
+          <TileLayer
+            key={theme}
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+            attribution='&copy; OpenStreetMap &copy; CARTO'
+          />
+          <MapEventHandler onMapClick={handleMapClick} />
 
-      {/* Route Directions Panel */}
-      {showRoutePanel && routeData && (
-        <div className="absolute bottom-4 right-4 z-[1000] max-w-sm">
-          <motion.div
-            initial={{ x: 400, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: 400, opacity: 0 }}
-            className="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-2xl ring-1 ring-slate-200 dark:ring-slate-700 max-h-96 overflow-y-auto"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-slate-900 dark:text-white">Route Details</h3>
-              <button
-                onClick={() => setShowRoutePanel(false)}
-                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
-              >
-                <XMarkIcon className="w-5 h-5 text-slate-500" />
-              </button>
-            </div>
+          {/* Glowing Routes */}
+          {routeCoordinates.length > 0 && (
+            <>
+              {/* Outer Glow */}
+              <Polyline positions={routeCoordinates} pathOptions={{ color: '#B08968', weight: 12, opacity: 0.15, lineCap: 'round', lineJoin: 'round' }} />
+              {/* Core Line */}
+              <Polyline positions={routeCoordinates} pathOptions={{ color: '#B08968', weight: 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
+            </>
+          )}
 
-            <div className="space-y-2 mb-4">
-              <div className="flex items-center justify-between p-3 bg-cyan-50 dark:bg-cyan-900/20 rounded-lg">
-                <span className="text-sm text-slate-700 dark:text-slate-300">Distance</span>
-                <span className="font-semibold text-cyan-700 dark:text-cyan-400">
-                  {(routeData.distance / 1000).toFixed(1)} km
-                </span>
+          {/* Premium User Marker */}
+          <Circle center={[userLocation.lat, userLocation.lng]} radius={Math.min(accuracy || 40, 80)} pathOptions={{ color: 'rgba(176, 137, 104, 0.4)', fillColor: 'rgba(176, 137, 104, 0.1)', fillOpacity: 1, weight: 1 }} />
+          <Marker position={[userLocation.lat, userLocation.lng]} icon={userPremiumIcon}>
+            <Popup className="premium-popup">
+              <div className="bg-[#111111] text-[#F5F5F7] p-1 rounded-xl">
+                <h3 className="font-semibold text-xs text-[#B08968] uppercase tracking-widest mb-1">Your Location</h3>
+                <p className="text-sm font-medium">{user?.name || 'Rider'}</p>
               </div>
-              <div className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
-                <span className="text-sm text-slate-700 dark:text-slate-300">Duration</span>
-                <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                  {Math.round(routeData.duration / 60)} min
-                </span>
-              </div>
-            </div>
+            </Popup>
+          </Marker>
 
-            {routeInstructions.length > 0 && (
-              <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
-                  Turn-by-Turn Directions
-                </h4>
-                <div className="space-y-2">
-                  {routeInstructions.slice(0, 10).map((instruction, index) => (
-                    <div
-                      key={index}
-                      className="flex items-start space-x-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-lg transition-colors"
-                    >
-                      <div className="flex-shrink-0 w-6 h-6 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400 rounded-full flex items-center justify-center text-xs font-semibold">
-                        {index + 1}
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-xs font-medium text-slate-900 dark:text-white capitalize">
-                          {instruction.instruction.replace(/-/g, ' ')}
-                        </p>
-                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                          {instruction.name}
-                        </p>
-                        {instruction.distance > 0 && (
-                          <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5">
-                            {instruction.distance > 1000 
-                              ? `${(instruction.distance / 1000).toFixed(1)} km`
-                              : `${Math.round(instruction.distance)} m`
-                            }
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {routeInstructions.length > 10 && (
-                    <p className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">
-                      +{routeInstructions.length - 10} more steps
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
+          {/* Destination Marker */}
+          {destination && (
+            <Marker position={[destination.lat, destination.lng]} icon={destinationIcon}>
+              <Popup className="premium-popup">
+                 <div className="bg-[#111111] text-[#F5F5F7] p-1 rounded-xl text-center">
+                    <h3 className="font-semibold text-xs text-[#86868B] uppercase tracking-widest mb-1">Destination</h3>
+                    {destination.name && <p className="text-sm font-medium">{destination.name}</p>}
+                    <button onClick={() => { setDestination(null); setRouteData(null); setRouteCoordinates([]); }} className="mt-3 w-full py-1.5 rounded-lg bg-red-500/10 text-red-500 text-xs font-medium hover:bg-red-500/20">Clear Route</button>
+                 </div>
+              </Popup>
+            </Marker>
+          )}
 
-            <div className="flex gap-2 mt-4">
-              <button
-                onClick={() => {
-                  setIsNavigating(true)
-                  setCurrentStepIndex(0)
-                  setShowRoutePanel(false)
-                }}
-                className="flex-1 px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors font-medium text-sm"
-              >
-                Start Navigation
-              </button>
-              <button
-                onClick={() => {
-                  setDestination(null)
-                  setRouteData(null)
-                  setRouteCoordinates([])
-                  setRouteInstructions([])
-                  setShowRoutePanel(false)
-                }}
-                className="flex-1 px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors font-medium text-sm"
-              >
-                Clear Route
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+          {/* POI Markers */}
+          {nearbyPOIs.map((poi) => (
+            <Marker key={poi.id} position={[poi.coordinates[1], poi.coordinates[0]]} icon={poiPremiumIcon}>
+               <Popup className="premium-popup"><div className="bg-[#111111] text-white p-1">{poi.name}</div></Popup>
+            </Marker>
+          ))}
 
-      {/* Real-time Navigation Panel */}
-      {isNavigating && nextInstruction && (
-        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-[1001] w-full max-w-md px-4">
-          <motion.div
-            initial={{ y: 100, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 100, opacity: 0 }}
-            className="bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl p-6 shadow-2xl text-white"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex-1">
-                {!isNaN(distanceToNextTurn) && distanceToNextTurn > 0 ? (
-                  distanceToNextTurn < 1000 ? (
-                    <div className="text-4xl font-bold mb-1 text-white">
-                      {Math.round(distanceToNextTurn)} m
-                    </div>
-                  ) : (
-                    <div className="text-4xl font-bold mb-1 text-white">
-                      {(distanceToNextTurn / 1000).toFixed(1)} km
-                    </div>
-                  )
-                ) : (
-                  <div className="text-4xl font-bold mb-1 text-white">
-                    -- m
-                  </div>
-                )}
-                <p className="text-sm text-white/90 font-medium">to next turn</p>
-              </div>
-              <button
-                onClick={() => {
-                  setIsNavigating(false)
-                  setShowRoutePanel(true)
-                }}
-                className="p-2 hover:bg-white/20 rounded-full transition-colors text-white"
-              >
-                <XMarkIcon className="w-6 h-6" />
-              </button>
-            </div>
+          {/* Emergency Markers */}
+          {emergencyAlerts.filter(a => a.location?.coordinates?.length >= 2).map((alert) => (
+            <Marker key={alert.id} position={[alert.location.coordinates[1], alert.location.coordinates[0]]} icon={emergencyPremiumIcon}>
+              <Popup className="premium-popup"><div className="bg-[#111111] text-red-500 p-1 font-semibold">{alert.type.toUpperCase()}</div></Popup>
+            </Marker>
+          ))}
 
-            <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 mb-4">
-              <div className="flex items-center space-x-3">
-                <div className="flex-shrink-0 w-10 h-10 bg-white/30 rounded-full flex items-center justify-center">
-                  <span className="text-2xl">
-                    {nextInstruction.includes('right') ? '➡️' : 
-                     nextInstruction.includes('left') ? '⬅️' : 
-                     nextInstruction.includes('straight') || nextInstruction.includes('continue') ? '⬆️' : '🔄'}
-                  </span>
-                </div>
-                <p className="text-lg font-medium capitalize text-white">
-                  {nextInstruction.replace(/-/g, ' ').replace(/_/g, ' ')}
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-3">
-                <p className="text-xs text-white/80 font-medium mb-1">Remaining</p>
-                <p className="text-lg font-semibold text-white">
-                  {!isNaN(remainingDistance) && remainingDistance > 0 ? (
-                    remainingDistance > 1000 
-                      ? `${(remainingDistance / 1000).toFixed(1)} km`
-                      : `${Math.round(remainingDistance)} m`
-                  ) : '--'}
-                </p>
-              </div>
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-3">
-                <p className="text-xs text-white/80 font-medium mb-1">ETA</p>
-                <p className="text-lg font-semibold text-white">
-                  {!isNaN(remainingTime) && remainingTime > 0 ? `${remainingTime} min` : '--'}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 flex items-center justify-between text-xs text-white/90">
-              <span className="font-medium">Step {currentStepIndex + 1} of {routeInstructions.length}</span>
-              <button
-                onClick={() => setShowRoutePanel(true)}
-                className="hover:text-white transition-colors underline font-medium"
-              >
-                View all steps
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+          {/* Network Riders */}
+          {nearbyRiders.map((rider) => {
+            if (!rider.location) return null
+            const icon = rider.isFriend ? friendPremiumIcon : strangerPremiumIcon
+            return (
+              <Marker key={`nearby-${rider.userId}`} position={[rider.location.lat, rider.location.lng]} icon={icon}>
+                <Popup className="premium-popup"><div className="bg-[#111111] text-white p-1 text-sm">{rider.name}</div></Popup>
+              </Marker>
+            )
+          })}
+        </MapContainer>
+      </div>
     </div>
   )
-  
+
   } catch (error) {
-    console.error('🚨 MAP COMPONENT ERROR CAUGHT:', error)
-    console.error('🚨 ERROR DETAILS:', error.message, error.stack)
-    
+    console.error('🚨 MAP COMPONENT ERROR CAUGHT:', error);
     return (
       <div className="flex items-center justify-center min-h-screen bg-red-900 text-white">
         <div className="text-center p-8">
           <h2 className="text-2xl font-bold mb-4">🗺️ Map Loading Error</h2>
           <p className="mb-4">Map component crashed: {error.message}</p>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="bg-blue-500 px-4 py-2 rounded"
-          >
-            Reload Page
-          </button>
         </div>
       </div>
     )
   }
 }
 
-export default Map
+export default Map;

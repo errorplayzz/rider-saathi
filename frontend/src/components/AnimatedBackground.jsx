@@ -90,8 +90,8 @@ const AnimatedBackground = ({ className = '' }) => {
                 // Draw particle glow
                 const glowGradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 4)
                 if (p.color === 'teal') {
-                    glowGradient.addColorStop(0, `rgba(94, 234, 212, ${p.opacity * pulse * 0.3})`)
-                    glowGradient.addColorStop(1, 'rgba(94, 234, 212, 0)')
+                    glowGradient.addColorStop(0, `rgba(255, 106, 0, ${p.opacity * pulse * 0.3})`)
+                    glowGradient.addColorStop(1, 'rgba(255, 106, 0, 0)')
                 } else {
                     glowGradient.addColorStop(0, `rgba(148, 163, 184, ${p.opacity * pulse * 0.2})`)
                     glowGradient.addColorStop(1, 'rgba(148, 163, 184, 0)')
@@ -105,7 +105,7 @@ const AnimatedBackground = ({ className = '' }) => {
                 ctx.beginPath()
                 ctx.arc(p.x, p.y, p.radius * pulse, 0, Math.PI * 2)
                 if (p.color === 'teal') {
-                    ctx.fillStyle = `rgba(94, 234, 212, ${p.opacity * pulse})`
+                    ctx.fillStyle = `rgba(255, 106, 0, ${p.opacity * pulse})`
                 } else {
                     ctx.fillStyle = `rgba(148, 163, 184, ${p.opacity * pulse})`
                 }
@@ -126,8 +126,8 @@ const AnimatedBackground = ({ className = '' }) => {
                         // Create gradient line
                         const gradient = ctx.createLinearGradient(p.x, p.y, p2.x, p2.y)
                         if (p.color === 'teal' || p2.color === 'teal') {
-                            gradient.addColorStop(0, `rgba(94, 234, 212, ${alpha})`)
-                            gradient.addColorStop(1, `rgba(56, 189, 248, ${alpha * 0.5})`)
+                            gradient.addColorStop(0, `rgba(255, 106, 0, ${alpha})`)
+                            gradient.addColorStop(1, `rgba(255, 61, 0, ${alpha * 0.5})`)
                         } else {
                             gradient.addColorStop(0, `rgba(148, 163, 184, ${alpha * 0.6})`)
                             gradient.addColorStop(1, `rgba(148, 163, 184, ${alpha * 0.3})`)
@@ -159,11 +159,11 @@ const AnimatedBackground = ({ className = '' }) => {
     }, [])
 
     return (
-        <div className={`absolute inset-0 overflow-hidden pointer-events-none ${className}`}>
+        <div className={`fixed inset-0 overflow-hidden pointer-events-none z-0 ${className}`}>
             {/* Particle canvas */}
             <canvas
                 ref={canvasRef}
-                className="absolute inset-0 z-0"
+                className="absolute inset-0 w-full h-full"
                 style={{ opacity: 0.8 }}
             />
 
@@ -171,7 +171,7 @@ const AnimatedBackground = ({ className = '' }) => {
             <motion.div
                 className="absolute -top-40 left-1/4 w-[600px] h-[600px] rounded-full"
                 style={{
-                    background: 'radial-gradient(circle, rgba(94, 234, 212, 0.08) 0%, transparent 70%)',
+                    background: 'radial-gradient(circle, rgba(255, 106, 0, 0.08) 0%, transparent 70%)',
                     filter: 'blur(60px)'
                 }}
                 animate={{
@@ -189,7 +189,7 @@ const AnimatedBackground = ({ className = '' }) => {
             <motion.div
                 className="absolute top-1/3 -right-40 w-[500px] h-[500px] rounded-full"
                 style={{
-                    background: 'radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%)',
+                    background: 'radial-gradient(circle, rgba(255, 61, 0, 0.06) 0%, transparent 70%)',
                     filter: 'blur(80px)'
                 }}
                 animate={{
@@ -226,7 +226,7 @@ const AnimatedBackground = ({ className = '' }) => {
             <motion.div
                 className="absolute top-1/2 left-1/2 w-[800px] h-[800px] -translate-x-1/2 -translate-y-1/2"
                 style={{
-                    background: 'conic-gradient(from 0deg, transparent 0deg, rgba(94, 234, 212, 0.03) 30deg, transparent 60deg)',
+                    background: 'conic-gradient(from 0deg, transparent 0deg, rgba(255, 106, 0, 0.03) 30deg, transparent 60deg)',
                     borderRadius: '50%'
                 }}
                 animate={{

@@ -1,358 +1,251 @@
-import { useMemo, useRef } from 'react';
-import { motion, useInView, useReducedMotion } from 'framer-motion';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { Link } from 'react-router-dom';
-import { useTheme } from '../contexts/ThemeContext';
-import AnimatedBackground from '../components/AnimatedBackground';
 import Footer from '../components/Footer';
 
-/**
- * COMMAND TIMELINE - Professional Core Team Section
- * 
- * Design Concept:
- * - Vertical command-style timeline with alternating left/right nodes
- * - Each node represents ONE core team member
- * - Scroll-based reveal animations (no bounce, no elastic)
- * - Mission-control aesthetic for safety-tech platform
- * 
- * Photo Treatment (CRITICAL):
- * - DEFAULT: grayscale/desaturated (grayscale(100%))
- * - HOVER/ACTIVE: full color (grayscale(0%))
- * - Smooth transition (400ms)
- * - Subtle accent ring on active
- * 
- * Timeline Structure:
- * - Center vertical line with subtle glow
- * - Nodes alternate left/right
- * - Each node: photo + name + role + bio + tech chips
- * - Active item visually emphasized
- * 
- * Accessibility:
- * - prefers-reduced-motion respected
- * - Keyboard navigation friendly
- * - Mobile: single column, same grayscale→color on tap
- */
+const coreTeam = [
+  {
+    id: 1,
+    name: 'Raunak Kumar Singh',
+    shortName: 'Raunak',
+    role: 'Core Team Member',
+    image: '/team/raunak-kumar.jpeg',
+    imagePosition: 'object-center',
+    links: [
+      { label: 'LinkedIn', url: 'https://www.linkedin.com/in/raunak-kumar-singh-8038152b0/' },
+      { label: 'GitHub', url: 'https://github.com/raunakk942-lab' }
+    ]
+  },
+  {
+    id: 2,
+    name: 'Sumit Prajapati',
+    shortName: 'Sumit',
+    role: 'Core Team Member',
+    image: '/team/sumit.jpeg',
+    imagePosition: 'object-top', 
+    links: [
+      { label: 'LinkedIn', url: 'https://www.linkedin.com/in/sumitprajapati2468/' },
+      { label: 'GitHub', url: 'https://github.com/sumitprajapati2468-code' }
+    ]
+  },
+  {
+    id: 3,
+    name: 'Shashank Mahariya',
+    shortName: 'Shashank',
+    role: 'Core Team Member',
+    image: '/team/shashank.jpeg',
+    imagePosition: 'object-center', 
+    links: [
+      { label: 'LinkedIn', url: 'https://www.linkedin.com/in/shashank-mahariya/' },
+      { label: 'GitHub', url: 'https://github.com/errorplayzz/' }
+    ]
+  },
+  {
+    id: 4,
+    name: 'Kumar Daksha Singh',
+    shortName: 'Daksha',
+    role: 'Core Team Member',
+    image: '/team/kumar-daksha.jpeg',
+    imagePosition: 'object-[50%_35%]', 
+    links: [
+      { label: 'LinkedIn', url: 'https://www.linkedin.com/in/kumar-daksha-singh-19700437a/' },
+      { label: 'GitHub', url: 'https://github.com/singhdaksha10-art/' }
+    ]
+  },
+  {
+    id: 5,
+    name: 'Nirdesh khanna',
+    shortName: 'Nirdesh',
+    role: 'Core Team Member',
+    image: '/team/khanna.jpeg',
+    imagePosition: 'object-top',
+    links: [
+      { label: 'LinkedIn', url: 'https://www.linkedin.com/in/nirdesh-khanna-9b231530b/' },
+      { label: 'GitHub', url: 'https://github.com/khannanirdesh-0408/' }
+    ]
+  },
+  {
+    id: 6,
+    name: 'Aarushi Jaiswal',
+    shortName: 'Aarushi',
+    role: 'Core Team Member',
+    image: '/team/arushi.jpeg',
+    imagePosition: 'object-[50%_35%]', 
+    links: [
+      { label: 'LinkedIn', url: 'https://www.linkedin.com/in/aarushi-09-jaiswal/' },
+      { label: 'GitHub', url: 'https://github.com/aarushi09jaiswal-coder' }
+    ]
+  }
+];
 
 const Team = () => {
-  const { isDark } = useTheme();
-  const prefersReducedMotion = useReducedMotion();
-  const particles = useMemo(() => (
-    Array.from({ length: 40 }, (_, i) => ({
-      id: i,
-      size: Math.random() * 3 + 1,
-      x: Math.random() * 100,
-      y: Math.random() * 100,
-      duration: 6 + Math.random() * 8,
-      delay: Math.random() * 4,
-      opacity: 0.2 + Math.random() * 0.4
-    }))
-  ), []);
+  // Start with the first member hovered for a great initial state
+  const [hoveredIndex, setHoveredIndex] = useState(0);
+  const [isAutoPlaying, setIsAutoPlaying] = useState(true);
+  const resumeTimeoutRef = useRef(null);
 
-  // Core team data - Mission-critical safety system operators
-  const coreTeam = [
-    {
-      id: 1,
-      name: 'Raunak Kumar Singh',
-      role: 'Core Team Member',
-      image: '/team/raunak-kumar.jpeg',
-      links: [
-        { label: '🔗 LinkedIn', url: 'https://www.linkedin.com/in/raunak-kumar-singh-8038152b0/' },
-        { label: '💻 GitHub', url: 'https://github.com/raunakk942-lab' }
-      ],
-      side: 'left'
-    },
-    {
-      id: 2,
-      name: 'Sumit Prajapati',
-      role: 'Core Team Member',
-      image: '/team/sumit.jpeg',
-      links: [
-        { label: '🔗 LinkedIn', url: 'https://www.linkedin.com/in/sumitprajapati2468/' },
-        { label: '💻 GitHub', url: 'https://github.com/sumitprajapati2468-code' }
-      ],
-      side: 'right'
-    },
-    {
-      id: 3,
-      name: 'Shashank Mahariya',
-      role: 'Core Team Member',
-      image: '/team/shashank.jpeg',
-      links: [
-        { label: '🔗 LinkedIn', url: 'https://www.linkedin.com/in/shashank-mahariya/' },
-        { label: '💻 GitHub', url: 'https://github.com/errorplayzz/' }
-      ],
-      side: 'left'
-    },
-    {
-      id: 4,
-      name: 'Kumar Daksha Singh',
-      role: 'Core Team Member',
-      image: '/team/kumar-daksha.jpeg',
-      links: [
-        { label: '🔗 LinkedIn', url: 'https://www.linkedin.com/in/kumar-daksha-singh-19700437a/' },
-        { label: '💻 GitHub', url: 'https://github.com/singhdaksha10-art/' }
-      ],
-      side: 'right'
-    },
-    {
-      id: 5,
-      name: 'Nirdesh khanna',
-      role: 'Core Team Member',
-      image: '/team/khanna.jpeg',
-      links: [
-        { label: '🔗 LinkedIn', url: 'https://www.linkedin.com/in/nirdesh-khanna-9b231530b/' },
-        { label: '💻 GitHub', url: 'https://github.com/khannanirdesh-0408/' }
-      ],
-      side: 'left'
-    },
-    {
-      id: 6,
-      name: 'Mehul Adlakha',
-      role: 'Core Team Member',
-      image: '/team/adlakha.jpeg',
-      links: [
-        { label: '🔗 LinkedIn', url: 'https://www.linkedin.com/in/mehul-adlakha-2423b7362/' },
-        { label: '💻 GitHub', url: 'https://github.com/MehulAdlakha' }
-      ],
-      side: 'right'
-    },
-    {
-      id: 7,
-      name: 'Aarushi Jaiswal',
-      role: 'Core Team Member',
-      image: '/team/arushi.jpeg',
-      links: [
-        { label: '🔗 LinkedIn', url: 'https://www.linkedin.com/in/aarushi-09-jaiswal/' },
-        { label: '💻 GitHub', url: 'https://github.com/aarushi09jaiswal-coder' }
-      ],
-      side: 'left'
+  useEffect(() => {
+    if (!isAutoPlaying) return;
+
+    const interval = setInterval(() => {
+      setHoveredIndex((prev) => (prev + 1) % coreTeam.length);
+    }, 3000); // Change image every 3 seconds
+
+    return () => clearInterval(interval);
+  }, [isAutoPlaying]);
+
+  const handleGalleryEnter = () => {
+    setIsAutoPlaying(false);
+    if (resumeTimeoutRef.current) {
+      clearTimeout(resumeTimeoutRef.current);
     }
-  ];
+  };
+
+  const handleGalleryLeave = () => {
+    if (resumeTimeoutRef.current) {
+      clearTimeout(resumeTimeoutRef.current);
+    }
+    // Wait 2 seconds before resuming auto-play
+    resumeTimeoutRef.current = setTimeout(() => {
+      setIsAutoPlaying(true);
+    }, 2000);
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
-      <AnimatedBackground />
+    <div className="min-h-screen bg-[#050505] text-[#F5F5F7] selection:bg-[#B08968] selection:text-[#050505] overflow-x-hidden">
+      
+      {/* Hero Section: Interactive Expandable Accordion */}
+      <section className="relative pt-32 pb-12 px-4 flex flex-col items-center justify-center min-h-screen">
+        
+        {/* Back to Home Link (Top Left) */}
+        <Link
+          to="/"
+          className="absolute top-28 left-4 md:left-8 lg:left-12 inline-flex items-center gap-2 text-sm font-medium text-[#86868B] hover:text-[#B08968] transition-colors z-50"
+        >
+          <ArrowLeftIcon className="w-4 h-4" />
+          Back to Home
+        </Link>
 
-      {/* Premium Particle Layer */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        {particles.map((dot) => (
-          <motion.span
-            key={dot.id}
-            className="absolute rounded-full"
-            style={{
-              width: dot.size,
-              height: dot.size,
-              left: `${dot.x}%`,
-              top: `${dot.y}%`,
-              background: isDark ? 'rgba(94,234,212,0.7)' : 'rgba(59,130,246,0.35)',
-              opacity: dot.opacity,
-              filter: 'blur(0.2px)'
-            }}
-            animate={prefersReducedMotion ? {} : { y: [0, -18, 0], opacity: [dot.opacity, dot.opacity + 0.2, dot.opacity] }}
-            transition={{
-              duration: dot.duration,
-              repeat: Infinity,
-              delay: dot.delay,
-              ease: 'easeInOut'
-            }}
-          />
-        ))}
-      </div>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="text-center mb-8 max-w-4xl relative z-20"
+        >
+          <h1 className="text-3xl md:text-5xl font-bold tracking-tight mb-4">
+            Meet <span className="text-[#B08968]">Team Errorist</span>
+          </h1>
+          <p className="text-base md:text-lg text-[#86868B] leading-relaxed max-w-2xl mx-auto px-4">
+            A diverse group of passionate professionals, each bringing unique skills and experiences to drive innovation and excellence in Rider Saathi's mission-critical safety infrastructure.
+          </p>
+        </motion.div>
 
-      {/* Header */}
-      <header className="relative z-10 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors"
-          >
-            <ArrowLeftIcon className="w-4 h-4" />
-            Back to Home
-          </Link>
-        </div>
-      </header>
+        {/* Expandable Hover Gallery (The "Clean & Mast" Approach) */}
+        <div 
+          className="w-full max-w-[1400px] mx-auto h-[50vh] min-h-[350px] max-h-[550px] flex gap-2 md:gap-4 px-2 md:px-8"
+          onMouseEnter={handleGalleryEnter}
+          onMouseLeave={handleGalleryLeave}
+        >
+          {coreTeam.map((member, i) => {
+            const isHovered = hoveredIndex === i;
+            return (
+              <motion.div
+                key={`accordion-${member.id}`}
+                className="relative overflow-hidden rounded-3xl cursor-pointer group"
+                animate={{
+                  flex: isHovered ? 4 : 1,
+                }}
+                transition={{ duration: 0.7, ease: [0.25, 1, 0.5, 1] }}
+                onHoverStart={() => setHoveredIndex(i)}
+                onClick={() => setHoveredIndex(i)}
+              >
+                {/* Background Image */}
+                <motion.img 
+                  src={member.image}
+                  alt={member.name}
+                  className={`absolute inset-0 w-full h-full object-cover filter contrast-110 ${member.imagePosition || 'object-center'}`}
+                  animate={{
+                    scale: isHovered ? 1.05 : 1,
+                    filter: isHovered ? "grayscale(0%)" : "grayscale(50%)"
+                  }}
+                  transition={{ duration: 0.7 }}
+                />
 
-      {/* Hero Section */}
-      <section className="relative z-10 py-16 px-4">
-        <div className="max-w-3xl mx-auto text-center">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
-          >
-            <h1 className="text-4xl md:text-5xl font-bold text-slate-900 dark:text-slate-50 mb-4">
-              Team Errorist
-            </h1>
-            <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
-              The core team operating Rider Saathi's mission-critical safety infrastructure.
-              <br />
-              <span className="text-sm opacity-75">Ensuring 24/7 protection for riders across the network.</span>
-            </p>
-          </motion.div>
-        </div>
-      </section>
+                {/* Dark Gradient Overlay */}
+                <div 
+                  className={`absolute inset-0 bg-gradient-to-t transition-opacity duration-700 ${
+                    isHovered 
+                      ? 'from-[#050505]/90 via-[#050505]/20 to-transparent opacity-100' 
+                      : 'from-[#050505]/60 to-transparent opacity-80'
+                  }`} 
+                />
 
-      {/* Command Timeline */}
-      <section className="relative z-10 py-12 px-4 pb-20">
-        <div className="max-w-5xl mx-auto relative">
-          {/* Center Timeline Line */}
-          <div 
-            className="absolute left-1/2 top-0 bottom-0 w-px -translate-x-1/2 hidden md:block"
-            style={{
-              background: isDark 
-                ? 'linear-gradient(to bottom, transparent, rgb(6 182 212 / 0.3), transparent)'
-                : 'linear-gradient(to bottom, transparent, rgb(148 163 184 / 0.4), transparent)'
-            }}
-          />
+                {/* Vertical Name (Visible when collapsed) */}
+                <AnimatePresence>
+                  {!isHovered && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                    >
+                      <span className="text-[#F5F5F7]/80 font-bold tracking-widest uppercase text-xs md:text-sm -rotate-90 whitespace-nowrap">
+                        {member.shortName || member.name.split(' ')[0]}
+                      </span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
-          {/* Timeline Nodes */}
-          <div className="space-y-16 md:space-y-24">
-            {coreTeam.map((member, index) => (
-              <TimelineNode
-                key={member.id}
-                member={member}
-                index={index}
-                prefersReducedMotion={prefersReducedMotion}
-                isDark={isDark}
-              />
-            ))}
-          </div>
+                {/* Expanded Content */}
+                <div className="absolute bottom-0 left-0 right-0 p-6 md:p-8 flex flex-col justify-end pointer-events-none">
+                  <motion.div
+                    animate={{
+                      opacity: isHovered ? 1 : 0,
+                      y: isHovered ? 0 : 30
+                    }}
+                    transition={{ duration: 0.5, delay: isHovered ? 0.2 : 0 }}
+                    className="overflow-hidden whitespace-nowrap"
+                  >
+                    <h3 className="text-2xl md:text-4xl font-bold text-[#F5F5F7] mb-2 drop-shadow-lg">
+                      {member.name}
+                    </h3>
+                    <p className="text-[#B08968] font-semibold tracking-wider uppercase text-xs md:text-sm drop-shadow-md mb-4">
+                      {member.role}
+                    </p>
+
+                    {/* Social Links */}
+                    {member.links && (
+                      <div className="flex gap-4 pointer-events-auto">
+                        {member.links.map((link) => (
+                          <a
+                            key={link.label}
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#F5F5F7]/70 hover:text-[#F5F5F7] hover:scale-110 transition-all duration-300 drop-shadow-lg"
+                          >
+                            {link.label === 'LinkedIn' && (
+                              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+                            )}
+                            {link.label === 'GitHub' && (
+                              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                            )}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </motion.div>
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
       </section>
 
       <Footer />
     </div>
-  );
-};
-
-/**
- * TimelineNode Component
- * 
- * Renders individual team member on the timeline.
- * Handles:
- * - Scroll-based reveal animation
- * - Grayscale → Color transition on hover
- * - Left/Right alternating layout
- * - Mobile responsive (single column)
- */
-const TimelineNode = ({ member, index, prefersReducedMotion, isDark }) => {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { 
-    once: true, 
-    margin: "-100px",
-    amount: 0.3 
-  });
-
-  // Determine layout direction (alternating left/right)
-  const isLeft = member.side === 'left';
-  
-  // Animation variants for timeline item reveal
-  const nodeVariants = {
-    hidden: {
-      opacity: 0,
-      x: prefersReducedMotion ? 0 : (isLeft ? -40 : 40),
-      y: prefersReducedMotion ? 0 : 20
-    },
-    visible: {
-      opacity: 1,
-      x: 0,
-      y: 0,
-      transition: {
-        duration: 0.7,
-        ease: [0.25, 0.46, 0.45, 0.94],
-        delay: prefersReducedMotion ? 0 : index * 0.15
-      }
-    }
-  };
-
-  return (
-    <motion.div
-      ref={ref}
-      variants={nodeVariants}
-      initial="hidden"
-      animate={isInView ? "visible" : "hidden"}
-      className={`relative flex items-center ${
-        isLeft 
-          ? 'md:justify-start md:pr-[50%]' 
-          : 'md:justify-end md:pl-[50%]'
-      }`}
-    >
-      {/* Timeline Node Connector (Desktop Only) */}
-      <div className="hidden md:block absolute left-1/2 top-1/2 -translate-y-1/2 -translate-x-1/2 z-10">
-        <div className="w-4 h-4 rounded-full border-2 border-cyan-500 dark:border-cyan-400 bg-white dark:bg-slate-900 shadow-lg">
-          <div className="w-full h-full rounded-full bg-cyan-500/20 dark:bg-cyan-400/20 animate-pulse" />
-        </div>
-      </div>
-
-      {/* Team Member Card */}
-      <div 
-        className={`group relative w-full md:w-auto ${
-          isLeft ? 'md:mr-12' : 'md:ml-12'
-        }`}
-      >
-        <div className="relative flex flex-col md:flex-row items-center md:items-start gap-6 p-6 md:p-8 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl shadow-lg hover:shadow-xl transition-all duration-500">
-          
-          {/* Photo Container - GRAYSCALE → COLOR on hover */}
-          <div className="relative flex-shrink-0">
-            {/* Accent Ring (visible on hover) */}
-            <div className="absolute -inset-1 rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 opacity-0 group-hover:opacity-100 blur-sm transition-opacity duration-400" />
-            
-            {/* Photo with grayscale filter */}
-            <div className="relative w-24 h-24 md:w-28 md:h-28 rounded-full overflow-hidden ring-2 ring-slate-200 dark:ring-slate-700 group-hover:ring-cyan-400 dark:group-hover:ring-cyan-500 transition-all duration-400">
-              <img
-                src={member.image}
-                alt={member.name}
-                className="w-full h-full object-cover transition-all duration-400 grayscale group-hover:grayscale-0 group-hover:scale-105"
-                style={{
-                  filter: 'contrast(0.95)'
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Content */}
-          <div className="flex-1 text-center md:text-left space-y-3">
-            {/* Role Badge */}
-            <div className="inline-block">
-              <span className="px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wide bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-800">
-                {member.role}
-              </span>
-            </div>
-
-            {/* Name */}
-            <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-50">
-              {member.name}
-            </h3>
-
-            {/* Links */}
-            {member.links && (
-              <div className="flex flex-wrap gap-2 justify-center md:justify-start pt-2">
-                {member.links.map((link) => (
-                  <a
-                    key={link.label}
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-cyan-50 dark:hover:bg-cyan-900/30 hover:text-cyan-700 dark:hover:text-cyan-300 hover:border-cyan-300 dark:hover:border-cyan-700 transition-colors"
-                  >
-                    {link.label}
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Connecting Line to Timeline (Desktop Only) */}
-        <div 
-          className={`hidden md:block absolute top-1/2 -translate-y-1/2 w-12 h-px bg-gradient-to-r ${
-            isLeft 
-              ? 'right-0 translate-x-full from-slate-300 dark:from-slate-700 to-transparent' 
-              : 'left-0 -translate-x-full from-transparent to-slate-300 dark:to-slate-700'
-          }`}
-        />
-      </div>
-    </motion.div>
   );
 };
 

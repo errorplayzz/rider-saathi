@@ -25,6 +25,10 @@ export const handleSocketConnection = (io) => {
     console.log(`User ${socket.userId} connected`)
 
     try {
+      // Join user-specific rooms immediately so HTTP routes can push realtime events.
+      socket.join(`user:${socket.userId}`)
+      socket.join(`user_${socket.userId}`)
+
       // Update user online status
       await User.findByIdAndUpdate(socket.userId, {
         isOnline: true,
@@ -550,6 +554,36 @@ export const handleSocketConnection = (io) => {
       } catch (error) {
         console.error('Send message error:', error)
         socket.emit('error', { message: 'Failed to send message' })
+      }
+    })
+
+    socket.on('typing-start', (data) => {
+      try {
+        const targetUserId = data?.targetUserId?.toString?.()
+        if (!targetUserId || targetUserId === socket.userId) return
+
+        io.to(`user:${targetUserId}`).emit('typing-indicator', {
+          fromUserId: socket.userId,
+          isTyping: true,
+          timestamp: new Date().toISOString()
+        })
+      } catch (error) {
+        console.error('Typing-start relay error:', error)
+      }
+    })
+
+    socket.on('typing-stop', (data) => {
+      try {
+        const targetUserId = data?.targetUserId?.toString?.()
+        if (!targetUserId || targetUserId === socket.userId) return
+
+        io.to(`user:${targetUserId}`).emit('typing-indicator', {
+          fromUserId: socket.userId,
+          isTyping: false,
+          timestamp: new Date().toISOString()
+        })
+      } catch (error) {
+        console.error('Typing-stop relay error:', error)
       }
     })
 

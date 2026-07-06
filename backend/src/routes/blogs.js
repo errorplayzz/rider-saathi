@@ -1,9 +1,167 @@
 import express from 'express'
+import fs from 'fs'
+import path from 'path'
+import multer from 'multer'
+import mongoose from 'mongoose'
 import { auth } from '../middleware/auth.js'
 import Blog from '../models/Blog.js'
+import User from '../models/User.js'
 import { body, query, validationResult } from 'express-validator'
 
 const router = express.Router()
+
+const blogImagesDir = path.join(process.cwd(), 'uploads', 'blogs', 'images')
+const blogVideosDir = path.join(process.cwd(), 'uploads', 'blogs', 'videos')
+
+try {
+  if (!fs.existsSync(blogImagesDir)) {
+    fs.mkdirSync(blogImagesDir, { recursive: true })
+  }
+  if (!fs.existsSync(blogVideosDir)) {
+    fs.mkdirSync(blogVideosDir, { recursive: true })
+  }
+} catch (error) {
+  console.error('Failed to prepare blog upload directories:', error)
+}
+
+const blogMediaStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    if (file.mimetype.startsWith('video/')) {
+      cb(null, blogVideosDir)
+      return
+    }
+    cb(null, blogImagesDir)
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '')
+    const base = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    cb(null, `${base}${ext}`)
+  }
+})
+
+const blogMediaUpload = multer({
+  storage: blogMediaStorage,
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.fieldname === 'image') {
+      if (!file.mimetype.startsWith('image/')) {
+        cb(new Error('Blog image must be an image file'))
+        return
+      }
+      cb(null, true)
+      return
+    }
+
+    if (file.fieldname === 'video') {
+      if (!file.mimetype.startsWith('video/')) {
+        cb(new Error('Blog video must be a video file'))
+        return
+      }
+      cb(null, true)
+      return
+    }
+
+    cb(new Error('Unsupported media field'))
+  }
+})
+
+const normalizeTags = (rawTags) => {
+  if (!rawTags) return []
+  if (Array.isArray(rawTags)) {
+    return rawTags.map((tag) => String(tag).trim().toLowerCase()).filter(Boolean)
+  }
+
+  if (typeof rawTags === 'string') {
+    const trimmed = rawTags.trim()
+    if (!trimmed) return []
+
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (Array.isArray(parsed)) {
+        return parsed.map((tag) => String(tag).trim().toLowerCase()).filter(Boolean)
+      }
+    } catch (_err) {
+      return trimmed.split(',').map((tag) => tag.trim().toLowerCase()).filter(Boolean)
+    }
+  }
+
+  return []
+}
+
+const getAuthorDisplayName = (user) => {
+  const preferredName = String(user?.name || user?.username || '').trim()
+  if (preferredName && !preferredName.includes('@')) return preferredName
+  return 'Rider'
+}
+
+const getValidObjectId = (value) => {
+  const id = String(value || '').trim()
+  if (!id) return null
+  return mongoose.Types.ObjectId.isValid(id) ? id : null
+}
+
+const enrichBlogsWithRegisteredNames = async (blogsInput) => {
+  const blogs = Array.isArray(blogsInput) ? blogsInput : []
+  if (blogs.length === 0) return blogs
+
+  const userIdSet = new Set()
+
+  for (const blog of blogs) {
+    const authorId = getValidObjectId(blog?.author?.id)
+    if (authorId) userIdSet.add(authorId)
+
+    if (Array.isArray(blog?.comments)) {
+      for (const comment of blog.comments) {
+        const commentAuthorId = getValidObjectId(comment?.author?.id)
+        if (commentAuthorId) userIdSet.add(commentAuthorId)
+      }
+    }
+  }
+
+  if (userIdSet.size === 0) return blogs
+
+  const users = await User.find({ _id: { $in: Array.from(userIdSet) } })
+    .select('_id name username avatar')
+    .lean()
+
+  const userMap = new Map(users.map((u) => [String(u._id), u]))
+
+  return blogs.map((blog) => {
+    const nextBlog = { ...blog }
+
+    const authorId = String(blog?.author?.id || '')
+    const authorProfile = userMap.get(authorId)
+    if (authorProfile) {
+      nextBlog.author = {
+        ...nextBlog.author,
+        id: authorId,
+        name: getAuthorDisplayName(authorProfile),
+        avatar: authorProfile.avatar || nextBlog.author?.avatar || null
+      }
+    }
+
+    if (Array.isArray(blog?.comments)) {
+      nextBlog.comments = blog.comments.map((comment) => {
+        const commentAuthorId = String(comment?.author?.id || '')
+        const commentProfile = userMap.get(commentAuthorId)
+
+        if (!commentProfile) return comment
+
+        return {
+          ...comment,
+          author: {
+            ...comment.author,
+            id: commentAuthorId,
+            name: getAuthorDisplayName(commentProfile),
+            avatar: commentProfile.avatar || comment.author?.avatar || null
+          }
+        }
+      })
+    }
+
+    return nextBlog
+  })
+}
 
 // Blog categories with metadata
 const categories = [
@@ -130,7 +288,7 @@ router.get('/', [
     // Execute query with pagination
     const skip = (page - 1) * limit
     
-    const [blogs, totalCount] = await Promise.all([
+    const [rawBlogs, totalCount] = await Promise.all([
       Blog.find(query)
         .sort(sort)
         .skip(skip)
@@ -138,6 +296,8 @@ router.get('/', [
         .lean(),
       Blog.countDocuments(query)
     ])
+
+    const blogs = await enrichBlogsWithRegisteredNames(rawBlogs)
 
     const totalPages = Math.ceil(totalCount / limit)
 
@@ -174,13 +334,15 @@ router.get('/', [
 // @access  Public
 router.get('/featured', async (req, res) => {
   try {
-    const featuredBlogs = await Blog.find({ 
+    const featuredBlogsRaw = await Blog.find({ 
       status: 'published', 
       featured: true 
     })
     .sort({ createdAt: -1 })
     .limit(5)
     .lean()
+
+    const featuredBlogs = await enrichBlogsWithRegisteredNames(featuredBlogsRaw)
 
     res.json({
       success: true,
@@ -242,11 +404,20 @@ router.get('/stats', async (req, res) => {
 // @access  Private
 router.post('/', [
   auth,
+  blogMediaUpload.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'video', maxCount: 1 }
+  ]),
   body('title').notEmpty().trim().isLength({ min: 5, max: 200 }),
   body('content').notEmpty().trim().isLength({ min: 50, max: 50000 }),
   body('category').isIn(categories.map(c => c.id)),
-  body('tags').optional().isArray(),
+  body('tags').optional().custom((value) => {
+    if (Array.isArray(value)) return true
+    if (typeof value === 'string') return true
+    return false
+  }),
   body('image').optional().isURL(),
+  body('video').optional().isURL(),
   body('excerpt').optional().isLength({ max: 500 })
 ], async (req, res) => {
   try {
@@ -259,7 +430,11 @@ router.post('/', [
       })
     }
 
-    const { title, content, category, tags, image, excerpt, featured } = req.body
+    const { title, content, category, image, video, excerpt, featured } = req.body
+    const tags = normalizeTags(req.body.tags)
+    const uploadedImage = req.files?.image?.[0]?.filename
+    const uploadedVideo = req.files?.video?.[0]?.filename
+    const authorDisplayName = getAuthorDisplayName(req.user)
     
     // Create new blog
     const blog = new Blog({
@@ -268,12 +443,17 @@ router.post('/', [
       excerpt: excerpt?.trim(),
       author: {
         id: req.user.id,
-        name: req.user.name || req.user.email || 'Anonymous User',
-        avatar: req.user.avatar || `https://ui-avatars.io/api/?name=${encodeURIComponent(req.user.name || req.user.email)}&background=0ea5e9&color=fff`
+        name: authorDisplayName,
+        avatar: req.user.avatar || `https://ui-avatars.io/api/?name=${encodeURIComponent(authorDisplayName)}&background=0ea5e9&color=fff`
       },
       category,
-      tags: tags || [],
-      image: image || `https://images.unsplash.com/photo-${Math.floor(Math.random() * 1000000000000)}?w=800&h=400&fit=crop&auto=format`,
+      tags,
+      image: uploadedImage
+        ? `/uploads/blogs/images/${uploadedImage}`
+        : image || '',
+      video: uploadedVideo
+        ? `/uploads/blogs/videos/${uploadedVideo}`
+        : video || '',
       featured: featured || false
     })
 
@@ -312,9 +492,11 @@ router.get('/:id', async (req, res) => {
     blog.views += 1
     await blog.save()
 
+    const [enrichedBlog] = await enrichBlogsWithRegisteredNames([blog.toObject()])
+
     res.json({
       success: true,
-      data: blog
+      data: enrichedBlog || blog
     })
   } catch (error) {
     console.error('Error fetching blog:', error)
@@ -330,6 +512,10 @@ router.get('/:id', async (req, res) => {
 // @access  Private (author only)
 router.put('/:id', [
   auth,
+  blogMediaUpload.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'video', maxCount: 1 }
+  ]),
   body('title').optional().trim().isLength({ min: 5, max: 200 }),
   body('content').optional().trim().isLength({ min: 50, max: 50000 }),
   body('category').optional().isIn(categories.map(c => c.id))
@@ -362,12 +548,26 @@ router.put('/:id', [
     }
 
     // Update fields
-    const updateFields = ['title', 'content', 'category', 'tags', 'image', 'excerpt', 'featured']
+    const updateFields = ['title', 'content', 'category', 'image', 'video', 'excerpt', 'featured']
     updateFields.forEach(field => {
       if (req.body[field] !== undefined) {
         blog[field] = req.body[field]
       }
     })
+
+    if (req.body.tags !== undefined) {
+      blog.tags = normalizeTags(req.body.tags)
+    }
+
+    const uploadedImage = req.files?.image?.[0]?.filename
+    const uploadedVideo = req.files?.video?.[0]?.filename
+
+    if (uploadedImage) {
+      blog.image = `/uploads/blogs/images/${uploadedImage}`
+    }
+    if (uploadedVideo) {
+      blog.video = `/uploads/blogs/videos/${uploadedVideo}`
+    }
 
     await blog.save()
 
@@ -492,6 +692,92 @@ router.post('/:id/like', auth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to toggle like'
+    })
+  }
+})
+
+// @route   POST /api/blogs/:id/comments
+// @desc    Add comment to blog
+// @access  Private
+router.post('/:id/comments', [
+  auth,
+  body('content').notEmpty().trim().isLength({ min: 1, max: 1000 })
+], async (req, res) => {
+  try {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation errors',
+        errors: errors.array()
+      })
+    }
+
+    const blog = await Blog.findById(req.params.id)
+    if (!blog) {
+      return res.status(404).json({
+        success: false,
+        message: 'Blog not found'
+      })
+    }
+
+    const newComment = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      author: {
+        id: req.user.id,
+        name: getAuthorDisplayName(req.user),
+        avatar: req.user.avatar || `https://ui-avatars.io/api/?name=${encodeURIComponent(getAuthorDisplayName(req.user))}&background=0ea5e9&color=fff`
+      },
+      content: req.body.content.trim(),
+      createdAt: new Date()
+    }
+
+    blog.comments.push(newComment)
+    await blog.save()
+
+    return res.status(201).json({
+      success: true,
+      message: 'Comment added successfully',
+      data: {
+        comment: newComment,
+        comments: blog.comments,
+        commentsCount: blog.comments.length
+      }
+    })
+  } catch (error) {
+    console.error('Error adding comment:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to add comment'
+    })
+  }
+})
+
+// @route   GET /api/blogs/:id/comments
+// @desc    Get comments for a blog
+// @access  Private
+router.get('/:id/comments', auth, async (req, res) => {
+  try {
+    const blog = await Blog.findById(req.params.id)
+    if (!blog) {
+      return res.status(404).json({
+        success: false,
+        message: 'Blog not found'
+      })
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        comments: blog.comments || [],
+        commentsCount: blog.comments?.length || 0
+      }
+    })
+  } catch (error) {
+    console.error('Error fetching comments:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch comments'
     })
   }
 })

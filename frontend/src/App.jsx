@@ -20,6 +20,7 @@ import LeafletMap from './pages/LeafletMap'
 import EnhancedMap from './pages/EnhancedMap'
 import Emergency from './pages/Emergency'
 import Chat from './pages/Chat'
+import Marketplace from './pages/Marketplace'
 import Vlogs from './pages/Vlogs'
 import Blog from './pages/Blog'
 import Profile from './pages/Profile'
@@ -105,6 +106,14 @@ const AppContent = () => {
                   element={
                     <ProtectedRoute>
                       <Chat />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/marketplace"
+                  element={
+                    <ProtectedRoute>
+                      <Marketplace />
                     </ProtectedRoute>
                   }
                 />

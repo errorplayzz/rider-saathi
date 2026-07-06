@@ -15,6 +15,20 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
   },
+  username: {
+    type: String,
+    unique: true,
+    sparse: true,
+    lowercase: true,
+    trim: true,
+    minlength: [3, 'Username must be at least 3 characters'],
+    maxlength: [20, 'Username cannot exceed 20 characters'],
+    match: [/^[a-z0-9_]+$/, 'Username can contain only lowercase letters, numbers and underscore']
+  },
+  usernameLocked: {
+    type: Boolean,
+    default: false
+  },
   password: {
     type: String,
     required: [true, 'Password is required'],
@@ -24,6 +38,11 @@ const userSchema = new mongoose.Schema({
   phone: {
     type: String,
     match: [/^\+?[\d\s-()]+$/, 'Please enter a valid phone number']
+  },
+  state: {
+    type: String,
+    trim: true,
+    maxlength: [100, 'State cannot exceed 100 characters']
   },
   avatar: {
     type: String,
@@ -137,6 +156,52 @@ const userSchema = new mongoose.Schema({
       default: 0
     }
   },
+
+  // Marketplace seller profile
+  sellerProfile: {
+    isSeller: {
+      type: Boolean,
+      default: false
+    },
+    shopName: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    phone: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    category: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    city: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    state: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    bio: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    approved: {
+      type: Boolean,
+      default: false
+    },
+    updatedAt: {
+      type: Date,
+      default: null
+    }
+  },
   
   // Status
   isOnline: {
@@ -167,9 +232,14 @@ const userSchema = new mongoose.Schema({
 
 // Index for geospatial queries
 userSchema.index({ currentLocation: '2dsphere' })
+userSchema.index({ username: 1 }, { unique: true, sparse: true })
 
 // Pre-save middleware to hash password
 userSchema.pre('save', async function(next) {
+  if (this.isModified('username') && this.username) {
+    this.username = this.username.toLowerCase().trim()
+  }
+
   if (!this.isModified('password')) {
     return next()
   }

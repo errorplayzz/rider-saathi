@@ -1,23 +1,25 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useLayoutEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { useTheme } from '../contexts/ThemeContext'
-import { motion, AnimatePresence } from 'framer-motion'
+import gsap from 'gsap'
 
 const ChatWidget = () => {
   const { session } = useAuth()
-  const { isDark } = useTheme()
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [isFocused, setIsFocused] = useState(false)
-  const containerRef = useRef(null)
-  const chatRef = useRef(null)
+  const [isRendered, setIsRendered] = useState(false)
 
+  const chatRef = useRef(null)
+  const pulseRef = useRef(null)
+  const widgetRef = useRef(null)
+  const chipsRef = useRef([])
+
+  // Close on outside click
   useEffect(() => {
     const onClickOutside = (e) => {
       if (!open) return
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
+      if (widgetRef.current && !widgetRef.current.contains(e.target) && !e.target.closest('#ai-open-btn')) {
         setOpen(false)
       }
     }
@@ -31,24 +33,73 @@ const ChatWidget = () => {
     }
   }, [messages, open])
 
-  const addMessage = (text, isUser = false, isSystem = false) => {
-    let cleanText = ''
-    if (typeof text === 'string') {
-      if (text.startsWith('{"id":"gen-') || text.includes('"provider":"OpenAI"')) {
-        cleanText = "Sorry, I'm having trouble processing that. Please try again."
-      } else {
-        cleanText = text
+  // GSAP Animations
+  useLayoutEffect(() => {
+    let ctx = gsap.context(() => {
+      // Pulse animation for open button (Breathing glow every 5 seconds)
+      if (pulseRef.current) {
+        gsap.to(pulseRef.current, {
+          scale: 1.4,
+          opacity: 0,
+          duration: 2,
+          repeat: -1,
+          repeatDelay: 3,
+          ease: 'power2.out'
+        })
       }
-    } else {
-      cleanText = "I received your message."
-    }
+    })
+    return () => ctx.revert()
+  }, [])
 
-    setMessages(prev => [...prev, {
-      text: cleanText,
-      isUser,
-      isSystem,
-      id: Date.now() + Math.random()
-    }])
+  useLayoutEffect(() => {
+    let ctx = gsap.context(() => {
+      if (open) {
+        setIsRendered(true)
+        gsap.fromTo(widgetRef.current,
+          { scale: 0.94, opacity: 0, y: 20, display: 'flex' },
+          { scale: 1, opacity: 1, y: 0, duration: 0.4, ease: 'power3.out' }
+        )
+
+        // Suggestion chips stagger
+        if (messages.length === 0 && chipsRef.current.length > 0) {
+          gsap.fromTo(chipsRef.current,
+            { opacity: 0, y: 15 },
+            { opacity: 1, y: 0, duration: 0.5, stagger: 0.08, delay: 0.15, ease: 'power2.out' }
+          )
+        }
+      } else if (!open && isRendered) {
+        gsap.to(widgetRef.current, {
+          scale: 0.94, opacity: 0, y: 20, duration: 0.3, ease: 'power2.in',
+          onComplete: () => setIsRendered(false)
+        })
+      }
+    })
+    return () => ctx.revert()
+  }, [open, messages.length])
+
+  useLayoutEffect(() => {
+    let ctx = gsap.context(() => {
+      if (loading) {
+        gsap.to('.typing-dot', {
+          y: -4,
+          opacity: 0.4,
+          duration: 0.4,
+          stagger: 0.15,
+          yoyo: true,
+          repeat: -1,
+          ease: 'power1.inOut'
+        })
+      }
+    }, chatRef)
+    return () => ctx.revert()
+  }, [loading])
+
+  const addMessage = (text, isUser = false) => {
+    setMessages(prev => [...prev, { text, isUser, id: Date.now() + Math.random() }])
+  }
+
+  const handleSuggestion = (text) => {
+    setInput(text)
   }
 
   const sendMessage = async () => {
@@ -67,16 +118,13 @@ const ChatWidget = () => {
         body: JSON.stringify({ message: userMessage })
       })
 
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`)
-      }
+      if (!response.ok) throw new Error(`API Error`)
 
       const data = await response.json()
-      let botReply = data?.choices?.[0]?.message?.content || "Sorry, I couldn't process your request properly."
+      let botReply = data?.choices?.[0]?.message?.content || "I couldn't process that properly."
       addMessage(botReply, false)
-
     } catch (error) {
-      addMessage("Sorry, I'm having technical difficulties. Please try again later.", false)
+      addMessage("Technical difficulties. Please try again later.", false)
     } finally {
       setLoading(false)
     }
@@ -89,279 +137,176 @@ const ChatWidget = () => {
     }
   }
 
-  // Theme-aware styles with enhanced glass effect
-  const styles = {
-    panel: isDark ? {
-      background: 'linear-gradient(135deg, rgba(15,23,42,0.7) 0%, rgba(30,41,59,0.8) 50%, rgba(15,23,42,0.75) 100%)',
-      borderColor: 'rgba(6,182,212,0.3)',
-      boxShadow: `
-        0 25px 50px -12px rgba(0,0,0,0.6),
-        0 0 0 1px rgba(6,182,212,0.15),
-        inset 0 1px 0 rgba(255,255,255,0.1),
-        inset 0 -1px 0 rgba(6,182,212,0.05)
-      `
-    } : {
-      background: 'linear-gradient(135deg, rgba(255,255,255,0.7) 0%, rgba(241,245,249,0.8) 50%, rgba(255,255,255,0.75) 100%)',
-      borderColor: 'rgba(59,130,246,0.3)',
-      boxShadow: `
-        0 25px 50px -12px rgba(0,0,0,0.2),
-        0 0 0 1px rgba(59,130,246,0.15),
-        inset 0 1px 0 rgba(255,255,255,0.4),
-        inset 0 -1px 0 rgba(59,130,246,0.05)
-      `
-    },
-    headerBg: isDark ? 'rgba(6,182,212,0.08)' : 'rgba(59,130,246,0.08)',
-    textPrimary: isDark ? '#f1f5f9' : '#0f172a',
-    textSecondary: isDark ? '#94a3b8' : '#64748b',
-    inputBg: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)',
-    inputBorder: isDark ? 'rgba(148,163,184,0.35)' : 'rgba(100,116,139,0.35)',
-    userMsg: isDark
-      ? 'linear-gradient(135deg, rgba(6,182,212,0.15) 0%, rgba(59,130,246,0.1) 100%)'
-      : 'linear-gradient(135deg, rgba(59,130,246,0.15) 0%, rgba(99,102,241,0.1) 100%)',
-    botMsg: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-    accent: isDark ? '#06b6d4' : '#3b82f6'
-  }
+  const suggestions = ["Navigate Home", "Nearby Fuel", "Emergency SOS", "Weather Ahead"]
 
   return (
     <>
-      {/* Floating trigger button */}
-      <motion.button
+      {/* Floating Open Button */}
+      <button
+        id="ai-open-btn"
         onClick={() => setOpen(v => !v)}
-        className="fixed bottom-5 right-5 z-[60] w-14 h-14 rounded-2xl flex items-center justify-center cursor-pointer"
+        className="fixed bottom-8 right-8 z-[60] w-[56px] h-[56px] rounded-full flex items-center justify-center cursor-pointer transition-transform duration-300 hover:scale-105"
         style={{
-          background: isDark
-            ? 'linear-gradient(135deg, rgba(15,23,42,0.8) 0%, rgba(30,41,59,0.85) 100%)'
-            : 'linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(241,245,249,0.85) 100%)',
-          border: `1px solid ${styles.accent}30`,
-          backdropFilter: 'blur(16px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(16px) saturate(180%)',
-          boxShadow: isDark
-            ? '0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(6,182,212,0.15), inset 0 1px 0 rgba(255,255,255,0.1)'
-            : '0 8px 32px rgba(0,0,0,0.15), 0 0 0 1px rgba(59,130,246,0.15), inset 0 1px 0 rgba(255,255,255,0.3)'
+          background: '#1A1A1A',
+          border: '1px solid rgba(176,137,104,0.3)',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)'
         }}
-        whileHover={{ scale: 1.05, y: -2 }}
-        whileTap={{ scale: 0.95 }}
-        aria-label="Open Rider Saathi AI Assistant"
+        onMouseEnter={(e) => gsap.to(e.currentTarget, { boxShadow: '0 12px 32px rgba(176,137,104,0.3)', scale: 1.06, duration: 0.3 })}
+        onMouseLeave={(e) => gsap.to(e.currentTarget, { boxShadow: '0 8px 24px rgba(0,0,0,0.5)', scale: 1, duration: 0.3 })}
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={styles.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10a10 10 0 0 1-10-10C2 6.477 6.477 2 12 2z" />
-          <circle cx="8" cy="10" r="1" fill={styles.accent} />
-          <circle cx="16" cy="10" r="1" fill={styles.accent} />
-          <path d="M9 15c.83.67 1.83 1 3 1s2.17-.33 3-1" />
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#B08968" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2a10 10 0 0 0-10 10v4a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-4a10 10 0 0 0-10-10z" />
+          <path d="M12 14v8" />
+          <path d="M8 22h8" />
         </svg>
-
-        {/* Pulse indicator */}
-        <span
-          className="absolute -top-1 -right-1 w-3 h-3 rounded-full"
-          style={{
-            background: '#10b981',
-            boxShadow: '0 0 0 2px ' + (isDark ? '#0f172a' : '#fff')
-          }}
+        {/* Soft breathing glow */}
+        <div
+          ref={pulseRef}
+          className="absolute inset-0 rounded-full border border-[#B08968] pointer-events-none"
         />
-      </motion.button>
+      </button>
 
-      {/* Chat Panel */}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            ref={containerRef}
-            className="fixed bottom-24 right-5 w-[380px] max-w-[calc(100vw-40px)] rounded-2xl overflow-hidden flex flex-col shadow-2xl"
-            style={{
-              height: '520px',
-              // Navbar (64px) + Bottom Offset (96px) + Safety Gap (20px) = 180px
-              maxHeight: 'calc(100vh - 180px)',
-              zIndex: 40, // Well below Navbar (z-100)
-              ...styles.panel,
-              backdropFilter: 'blur(24px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-              border: `1px solid ${styles.panel.borderColor}`
-            }}
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+      {/* Chat Widget Panel */}
+      <div
+        ref={widgetRef}
+        className="fixed bottom-[104px] right-4 md:right-6 w-[calc(100%-32px)] md:w-[380px] lg:w-[420px] rounded-[28px] overflow-hidden flex-col z-[60]"
+        style={{
+          height: '680px',
+          maxHeight: 'calc(100vh - 220px)',
+          background: 'rgba(15,15,15,0.92)',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
+          border: '1px solid rgba(176,137,104,0.25)',
+          display: isRendered ? 'flex' : 'none',
+          boxShadow: '0 24px 48px rgba(0,0,0,0.4)',
+          transformOrigin: 'bottom right'
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-[#B08968]/10 bg-black/20">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center border border-[#B08968]/30 bg-[#B08968]/10">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B08968" strokeWidth="1.5">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="font-medium text-[15px] text-white tracking-wide">Rider AI</h3>
+              <p className="text-[13px] text-white/50">Ride Assistant</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setOpen(false)}
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors"
           >
-            {/* Header */}
-            <div
-              className="flex items-center justify-between px-5 py-4"
-              style={{
-                background: `linear-gradient(135deg, ${styles.headerBg}, rgba(255,255,255,${isDark ? '0.02' : '0.1'}))`,
-                borderBottom: `1px solid ${isDark ? 'rgba(6,182,212,0.1)' : 'rgba(59,130,246,0.1)'}`,
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)'
-              }}
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className="w-2 h-2 rounded-full"
-                  style={{
-                    background: '#10b981',
-                    boxShadow: '0 0 8px rgba(16,185,129,0.6)'
-                  }}
-                />
-                <div>
-                  <h3
-                    className="font-semibold text-sm tracking-wide"
-                    style={{ color: styles.textPrimary }}
-                  >
-                    Rider Saathi — AI Assistant
-                  </h3>
-                  <span
-                    className="text-xs"
-                    style={{ color: styles.textSecondary }}
-                  >
-                    Online • Ready to assist
-                  </span>
-                </div>
-              </div>
-              <motion.button
-                onClick={() => setOpen(false)}
-                className="w-8 h-8 rounded-lg flex items-center justify-center"
-                style={{
-                  background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                  color: styles.textSecondary
-                }}
-                whileHover={{ scale: 1.1, background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}
-                whileTap={{ scale: 0.9 }}
-                aria-label="Close chat"
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M1 1l12 12M13 1L1 13" />
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M1 1l12 12M13 1L1 13" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Chat Area */}
+        <div ref={chatRef} className="flex-1 overflow-y-auto px-5 py-6 space-y-6">
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full pb-10">
+              <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6 relative">
+                <div className="absolute inset-0 bg-[#B08968] rounded-full blur-xl opacity-20" />
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#B08968" strokeWidth="1" className="relative z-10">
+                  <path d="M12 2a10 10 0 0 0-10 10v4a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-4a10 10 0 0 0-10-10z" />
+                  <path d="M12 14v8" />
+                  <path d="M8 22h8" />
                 </svg>
-              </motion.button>
-            </div>
+              </div>
+              <h4 className="text-white text-lg font-medium tracking-wide mb-2">Ready for your next ride.</h4>
+              <div className="flex gap-2 mb-8">
+                {['Navigation', 'Safety', 'Emergency', 'Community'].map((tag) => (
+                  <span key={tag} className="text-[11px] px-3 py-1 rounded-full border border-white/10 text-white/60 bg-white/5">
+                    {tag}
+                  </span>
+                ))}
+              </div>
 
-            {/* Messages */}
-            <div
-              ref={chatRef}
-              className="flex-1 overflow-y-auto px-4 py-4 space-y-3"
-              role="log"
-              aria-live="polite"
-            >
-              {messages.length === 0 && (
-                <div
-                  className="text-center py-8"
-                  style={{ color: styles.textSecondary }}
-                >
-                  <div className="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ background: `${styles.accent}15` }}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={styles.accent} strokeWidth="1.5">
-                      <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                      <path d="M2 17l10 5 10-5" />
-                      <path d="M2 12l10 5 10-5" />
-                    </svg>
-                  </div>
-                  <p className="text-sm font-medium" style={{ color: styles.textPrimary }}>
-                    How can I assist you today?
-                  </p>
-                  <p className="text-xs mt-1">
-                    Ask about safety, navigation, or emergencies
-                  </p>
-                </div>
-              )}
-
-              {messages.map((msg) => (
-                <motion.div
-                  key={msg.id}
-                  className={`flex ${msg.isUser ? 'justify-end' : 'justify-start'}`}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <div
-                    className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${msg.isSystem ? 'font-mono text-xs' : ''
-                      }`}
-                    style={{
-                      background: msg.isUser ? styles.userMsg : styles.botMsg,
-                      color: styles.textPrimary,
-                      border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
-                      borderRadius: msg.isUser ? '20px 20px 4px 20px' : '20px 20px 20px 4px'
-                    }}
+              {/* Suggestion Chips */}
+              <div className="w-full flex flex-col gap-2 px-2">
+                {suggestions.map((s, i) => (
+                  <button
+                    key={s}
+                    ref={el => chipsRef.current[i] = el}
+                    onClick={() => handleSuggestion(s)}
+                    className="w-full text-left px-5 py-3.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 hover:border-[#B08968]/30 transition-colors text-[14px] text-white/80"
                   >
-                    {msg.text}
-                  </div>
-                </motion.div>
-              ))}
-
-              {/* Typing indicator */}
-              {loading && (
-                <motion.div
-                  className="flex justify-start"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                >
-                  <div
-                    className="px-4 py-3 rounded-2xl flex items-center gap-1"
-                    style={{ background: styles.botMsg, border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}` }}
-                  >
-                    <span className="text-xs font-medium mr-2" style={{ color: styles.textSecondary }}>
-                      Analyzing
-                    </span>
-                    {[0, 1, 2].map((i) => (
-                      <motion.div
-                        key={i}
-                        className="w-1.5 h-1.5 rounded-full"
-                        style={{ background: styles.accent }}
-                        animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1, 0.8] }}
-                        transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
-                      />
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </div>
-
-            {/* Input area */}
-            <div
-              className="px-4 py-3"
-              style={{
-                borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
-                background: styles.headerBg
-              }}
-            >
-              <div
-                className="flex items-center gap-2 rounded-full px-4 py-2 transition-all duration-200"
-                style={{
-                  background: styles.inputBg,
-                  border: `1px solid ${styles.inputBorder}`,
-                  boxShadow: 'none'
-                }}
-              >
-                <input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={onKeyDown}
-                  onFocus={() => setIsFocused(true)}
-                  onBlur={() => setIsFocused(false)}
-                  placeholder="Ask Rider Saathi…"
-                  className="flex-1 bg-transparent outline-none text-sm"
-                  style={{
-                    color: styles.textPrimary,
-                    outline: 'none',
-                    outlineOffset: 0,
-                    boxShadow: 'none'
-                  }}
-                />
-                <motion.button
-                  onClick={sendMessage}
-                  disabled={loading || !input.trim()}
-                  className="w-8 h-8 rounded-full flex items-center justify-center transition-opacity"
-                  style={{
-                    background: `linear-gradient(135deg, ${styles.accent}, ${isDark ? '#0891b2' : '#2563eb'})`,
-                    opacity: loading || !input.trim() ? 0.5 : 1
-                  }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 2L7 9" />
-                    <path d="M14 2l-5 12-2-5-5-2 12-5z" />
-                  </svg>
-                </motion.button>
+                    {s}
+                  </button>
+                ))}
               </div>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+
+          {messages.map((msg) => (
+            <div key={msg.id} className={`flex ${msg.isUser ? 'justify-end' : 'justify-start'}`}>
+              <div
+                className={`max-w-[80%] px-5 py-3.5 text-[14px] leading-relaxed rounded-[22px] shadow-sm`}
+                style={{
+                  background: msg.isUser ? 'rgba(176,137,104,0.15)' : 'rgba(35,35,35,0.8)',
+                  color: msg.isUser ? '#ffffff' : 'rgba(255,255,255,0.9)',
+                  border: `1px solid ${msg.isUser ? 'rgba(176,137,104,0.3)' : 'rgba(255,255,255,0.05)'}`,
+                  borderRadius: msg.isUser ? '22px 22px 6px 22px' : '22px 22px 22px 6px'
+                }}
+              >
+                {msg.text}
+              </div>
+            </div>
+          ))}
+
+          {/* Typing Indicator */}
+          {loading && (
+            <div className="flex justify-start">
+              <div className="px-5 py-4 rounded-[22px] rounded-bl-[6px] bg-[#232323]/80 border border-white/5 flex items-center gap-1.5 h-[42px]">
+                <div className="flex gap-1.5 items-center">
+                  {[0, 1, 2].map((i) => (
+                    <div
+                      key={i}
+                      className="typing-dot w-1.5 h-1.5 rounded-full bg-[#B08968]"
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Input Area */}
+        <div className="px-6 py-5 bg-black/40 border-t border-[#B08968]/10">
+          <div className="h-[60px] flex items-center gap-3 rounded-full px-5 bg-white/5 border border-white/10 focus-within:border-[#B08968]/40 focus-within:bg-white/10 transition-colors">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.5">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="22" />
+            </svg>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Ask about your ride..."
+              className="flex-1 bg-transparent border-none outline-none text-[15px] text-white placeholder-white/40 h-full"
+            />
+            <button
+              onClick={sendMessage}
+              disabled={loading || !input.trim()}
+              className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed group relative overflow-hidden"
+              style={{
+                background: 'linear-gradient(135deg, #B08968, #8c6a4e)',
+              }}
+            >
+              <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="relative z-10 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
     </>
   )
 }

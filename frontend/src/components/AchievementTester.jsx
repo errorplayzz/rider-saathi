@@ -186,7 +186,7 @@ const AchievementTester = () => {
       </div>
 
       {/* Info */}
-      <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded text-xs text-blue-300">
+      <div className="mt-4 p-3 bg-orange-500/10 border border-orange-500/30 rounded text-xs text-orange-300">
         <strong>💡 Tip:</strong> Click activities to track progress. Visit Profile → Achievements to see unlocked achievements.
       </div>
     </div>
@@ -194,3 +194,4 @@ const AchievementTester = () => {
 }
 
 export default AchievementTester
+

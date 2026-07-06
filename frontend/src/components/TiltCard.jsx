@@ -5,7 +5,7 @@ import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
 const TiltCard = ({
     children,
     className = '',
-    glowColor = 'rgba(94, 234, 212, 0.15)',
+    glowColor = 'rgba(255, 106, 0, 0.15)',
     intensity = 15,
     ...props
 }) => {

@@ -299,7 +299,7 @@ export const useStaticLayer = () => {
  *     style={{ y: layer1 }}
  *     className="absolute inset-0 opacity-30"
  *   >
- *     <div className="w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl" />
+ *     <div className="w-96 h-96 bg-orange-500/20 rounded-full blur-3xl" />
  *   </motion.div>
  *   
  *   {/* Mid layer */}
@@ -307,7 +307,7 @@ export const useStaticLayer = () => {
  *     style={{ y: layer2 }}
  *     className="absolute inset-0 opacity-20"
  *   >
- *     <div className="w-64 h-64 bg-teal-500/20 rounded-full blur-2xl" />
+ *     <div className="w-64 h-64 bg-orange-500/20 rounded-full blur-2xl" />
  *   </motion.div>
  *   
  *   {/* Subtle layer */}
@@ -411,3 +411,4 @@ export default {
   PARALLAX_LAYERS,
   PARALLAX_VIEWPORT,
 }
+

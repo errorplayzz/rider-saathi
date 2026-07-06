@@ -24,6 +24,16 @@ const communitySchema = new mongoose.Schema({
     enum: ['city', 'topic', 'route', 'event', 'general'],
     default: 'general'
   },
+  visibility: {
+    type: String,
+    enum: ['public', 'private'],
+    default: 'public'
+  },
+  state: {
+    type: String,
+    trim: true,
+    maxlength: 100
+  },
   creator: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -98,6 +108,7 @@ communitySchema.index({ name: 'text', description: 'text' });
 communitySchema.index({ type: 1, isActive: 1 });
 communitySchema.index({ members: 1 });
 communitySchema.index({ verified: 1 });
+communitySchema.index({ visibility: 1, state: 1, isActive: 1 });
 
 // Methods
 communitySchema.methods.addMember = function(userId) {

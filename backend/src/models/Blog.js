@@ -50,6 +50,9 @@ const blogSchema = new mongoose.Schema({
   image: {
     type: String
   },
+  video: {
+    type: String
+  },
   status: {
     type: String,
     enum: ['draft', 'published', 'archived'],

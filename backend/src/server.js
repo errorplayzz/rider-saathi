@@ -36,6 +36,7 @@ import messagesRoutes from './routes/messages.js'
 import groupsRoutes from './routes/groups.js'
 import communitiesRoutes from './routes/communities.js'
 import postsRoutes from './routes/posts.js'
+import marketplaceRoutes from './routes/marketplace.js'
 // Location tracking routes
 import locationRoutes from './routes/location.js'
 // Stats routes
@@ -173,6 +174,7 @@ app.use('/api/messages', messagesRoutes)
 app.use('/api/groups', groupsRoutes)
 app.use('/api/communities', communitiesRoutes)
 app.use('/api/posts', postsRoutes)
+app.use('/api/marketplace', marketplaceRoutes)
 // Location tracking routes
 app.use('/api/location', locationRoutes)
 // Stats routes
@@ -239,6 +241,7 @@ const connectDB = async () => {
 
 // Socket.IO connection handling
 handleSocketConnection(io)
+app.set('socketService', { io })
 
 // Start server
 const DEFAULT_PORT = 5001

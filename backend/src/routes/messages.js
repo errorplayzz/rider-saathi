@@ -153,7 +153,43 @@ router.post('/send', protect, async (req, res) => {
     await message.populate('sender', 'name avatar');
     await message.populate('recipient', 'name avatar');
 
+    // Push realtime update to recipient so chat updates without manual refresh.
+    req.app.get('socketService')?.io.to(`user:${recipientId}`).emit('direct-message', {
+      conversationWith: req.user._id,
+      message
+    });
+
     res.status(201).json({ success: true, data: message });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Mark message as delivered
+router.put('/:messageId/delivered', protect, async (req, res) => {
+  try {
+    const { messageId } = req.params;
+
+    const message = await Message.findOne({
+      _id: messageId,
+      recipient: req.user._id,
+      messageType: 'direct',
+      isDeleted: false
+    });
+
+    if (!message) {
+      return res.status(404).json({ success: false, error: 'Message not found' });
+    }
+
+    await message.markAsDelivered();
+
+    req.app.get('socketService')?.io.to(`user:${message.sender}`).emit('message-status-update', {
+      messageId: message._id,
+      status: message.status,
+      updatedAt: message.deliveredAt || message.updatedAt
+    });
+
+    res.json({ success: true, data: message });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -175,7 +211,56 @@ router.put('/:messageId/read', protect, async (req, res) => {
 
     await message.markAsRead();
 
+    req.app.get('socketService')?.io.to(`user:${message.sender}`).emit('message-status-update', {
+      messageId: message._id,
+      status: message.status,
+      updatedAt: message.readAt || message.updatedAt
+    });
+
     res.json({ success: true, data: message });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Mark all unread direct messages in a conversation as read
+router.put('/conversation/:userId/read', protect, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const unreadMessages = await Message.find({
+      messageType: 'direct',
+      sender: userId,
+      recipient: req.user._id,
+      isDeleted: false,
+      status: { $ne: 'read' }
+    }).select('_id');
+
+    if (unreadMessages.length === 0) {
+      return res.json({ success: true, data: { updatedCount: 0, messageIds: [] } });
+    }
+
+    const messageIds = unreadMessages.map((m) => m._id);
+    const readAt = new Date();
+
+    await Message.updateMany(
+      { _id: { $in: messageIds } },
+      { $set: { status: 'read', readAt } }
+    );
+
+    req.app.get('socketService')?.io.to(`user:${userId}`).emit('message-status-batch-update', {
+      messageIds,
+      status: 'read',
+      updatedAt: readAt
+    });
+
+    res.json({
+      success: true,
+      data: {
+        updatedCount: messageIds.length,
+        messageIds
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

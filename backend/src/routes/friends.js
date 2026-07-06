@@ -164,6 +164,47 @@ router.get('/list', protect, async (req, res) => {
   }
 });
 
+// Search users by username for sending friend requests
+router.get('/search', protect, async (req, res) => {
+  try {
+    const q = (req.query.username || '').toString().toLowerCase().trim();
+    if (q.length < 2) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const currentUser = await User.findById(req.user._id).select('friends blockedUsers');
+    if (!currentUser) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const excludeIds = [req.user._id, ...(currentUser.friends || []), ...(currentUser.blockedUsers || [])];
+
+    const users = await User.find({
+      _id: { $nin: excludeIds },
+      username: { $regex: `^${q}`, $options: 'i' },
+      isActive: true
+    })
+      .select('name username avatar bikeDetails city state isOnline')
+      .limit(20);
+
+    const normalized = users.map((u) => ({
+      _id: u._id,
+      id: u._id,
+      name: u.name,
+      username: u.username,
+      avatar: u.avatar,
+      bike: u?.bikeDetails?.model || null,
+      city: u.city || null,
+      state: u.state || null,
+      online: !!u.isOnline
+    }));
+
+    return res.json({ success: true, data: normalized });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Remove friend
 router.delete('/:friendId', protect, async (req, res) => {
   try {

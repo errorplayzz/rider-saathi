@@ -27,8 +27,8 @@ const CyberGrid = () => {
                         transform: 'rotateX(60deg)',
                         transformOrigin: 'center bottom',
                         backgroundImage: `
-                            linear-gradient(rgba(94, 234, 212, 0.1) 1px, transparent 1px),
-                            linear-gradient(90deg, rgba(94, 234, 212, 0.1) 1px, transparent 1px)
+                            linear-gradient(rgba(255, 106, 0, 0.1) 1px, transparent 1px),
+                            linear-gradient(90deg, rgba(255, 106, 0, 0.1) 1px, transparent 1px)
                         `,
                         backgroundSize: '80px 80px',
                         backgroundPosition: '0 0'
@@ -43,7 +43,7 @@ const CyberGrid = () => {
                             className="absolute h-full w-px"
                             style={{
                                 left: `${(i + 1) * 5}%`,
-                                background: 'linear-gradient(to bottom, transparent, rgba(56, 189, 248, 0.15) 50%, transparent)',
+                                background: 'linear-gradient(to bottom, transparent, rgba(255, 61, 0, 0.15) 50%, transparent)',
                             }}
                             animate={{
                                 opacity: [0.3, 0.6, 0.3]
@@ -65,7 +65,7 @@ const CyberGrid = () => {
                             className="absolute w-full h-px"
                             style={{
                                 top: `${(i + 1) * 10}%`,
-                                background: 'linear-gradient(to right, transparent, rgba(94, 234, 212, 0.1) 50%, transparent)',
+                                background: 'linear-gradient(to right, transparent, rgba(255, 106, 0, 0.1) 50%, transparent)',
                             }}
                             animate={{
                                 opacity: [0.2, 0.5, 0.2]
@@ -83,8 +83,8 @@ const CyberGrid = () => {
                 <motion.div
                     className="absolute inset-x-0 h-px"
                     style={{
-                        background: 'linear-gradient(to right, transparent, rgba(94, 234, 212, 0.5), transparent)',
-                        boxShadow: '0 0 10px rgba(94, 234, 212, 0.5)'
+                        background: 'linear-gradient(to right, transparent, rgba(255, 106, 0, 0.5), transparent)',
+                        boxShadow: '0 0 10px rgba(255, 106, 0, 0.5)'
                     }}
                     animate={{
                         top: ['0%', '100%']
@@ -104,8 +104,8 @@ const CyberGrid = () => {
                         style={{
                             left: `${20 + i * 10}%`,
                             top: `${30 + (i % 3) * 20}%`,
-                            background: 'radial-gradient(circle, rgba(94, 234, 212, 0.8), transparent)',
-                            boxShadow: '0 0 15px rgba(94, 234, 212, 0.6)'
+                            background: 'radial-gradient(circle, rgba(255, 106, 0, 0.8), transparent)',
+                            boxShadow: '0 0 15px rgba(255, 106, 0, 0.6)'
                         }}
                         animate={{
                             scale: [1, 1.5, 1],
@@ -168,7 +168,7 @@ const DigitalRain = ({ density = 50 }) => {
             ctx.fillStyle = 'rgba(10, 15, 26, 0.05)'
             ctx.fillRect(0, 0, width, height)
 
-            ctx.fillStyle = 'rgba(94, 234, 212, 0.8)'
+            ctx.fillStyle = 'rgba(255, 106, 0, 0.8)'
             ctx.font = `${fontSize}px monospace`
 
             for (let i = 0; i < drops.length; i++) {
@@ -253,19 +253,19 @@ const GeometricShapes = ({ count = 15 }) => {
                 >
                     {shape.type === 'circle' && (
                         <div
-                            className="rounded-full border border-teal-400/20"
+                            className="rounded-full border border-orange-400/20"
                             style={{ width: shape.size, height: shape.size }}
                         />
                     )}
                     {shape.type === 'square' && (
                         <div
-                            className="border border-sky-400/20"
+                            className="border border-orange-400/20"
                             style={{ width: shape.size, height: shape.size }}
                         />
                     )}
                     {shape.type === 'triangle' && (
                         <div
-                            className="border-l border-r border-b border-purple-400/20"
+                            className="border-l border-r border-b border-orange-400/20"
                             style={{
                                 width: 0,
                                 height: 0,
@@ -285,3 +285,4 @@ const GeometricShapes = ({ count = 15 }) => {
 
 export { CyberGrid, DigitalRain, GeometricShapes }
 export default CyberGrid
+

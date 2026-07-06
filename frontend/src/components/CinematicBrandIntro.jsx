@@ -22,7 +22,7 @@ const getThemeColors = (isDark) => ({
   // Background
   background: isDark
     ? 'linear-gradient(180deg, #0a0f1a 0%, #0d1424 50%, #06090f 100%)'
-    : 'linear-gradient(180deg, #f8fafc 0%, #e2e8f0 50%, #f1f5f9 100%)',
+    : 'linear-gradient(180deg, #FAFAFA 0%, #E5E5E5 50%, #F2F2F2 100%)',
 
   // Particles
   particleColor: isDark ? '#4fd1c5' : '#3182ce',

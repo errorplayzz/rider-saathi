@@ -6,6 +6,7 @@ import {
   EnvelopeIcon, 
   LockClosedIcon,
   PhoneIcon,
+  MapPinIcon,
   EyeIcon,
   EyeSlashIcon,
   SparklesIcon,
@@ -16,7 +17,9 @@ import { useAuth } from '../contexts/AuthContext'
 const Register = () => {
   const [formData, setFormData] = useState({
     name: '',
+    username: '',
     email: '',
+    state: '',
     phone: '',
     password: '',
     confirmPassword: ''
@@ -86,11 +89,31 @@ const Register = () => {
       return
     }
 
+    if (!/^[a-z0-9_]{3,20}$/.test(formData.username)) {
+      setError('Username must be 3-20 chars (lowercase letters, numbers, underscore only)')
+      return
+    }
+
+    try {
+      const apiBase = (import.meta.env.VITE_API_URL || `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'}/api`).replace(/\/$/, '')
+      const checkRes = await fetch(`${apiBase}/auth/check-username/${encodeURIComponent(formData.username.toLowerCase())}`)
+      const checkData = await checkRes.json()
+      if (!checkRes.ok || !checkData?.available) {
+        setError(checkData?.message || 'Username is not available')
+        return
+      }
+    } catch (e) {
+      setError('Could not verify username availability. Please try again.')
+      return
+    }
+
     setLoading(true)
 
     const result = await register({
       name: formData.name,
+      username: formData.username.toLowerCase(),
       email: formData.email,
+      state: formData.state,
       phone: formData.phone,
       password: formData.password
     })
@@ -114,16 +137,16 @@ const Register = () => {
   }
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center px-4 py-20 overflow-hidden">
+    <div className="min-h-screen relative flex items-center justify-center px-4 pt-32 pb-20">
       {/* Animated Background Gradient */}
-      <div className="absolute inset-0 -z-10">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 dark:from-slate-950 dark:via-blue-950/30 dark:to-slate-950" />
+      <div className="fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 dark:from-slate-950 dark:via-orange-950/30 dark:to-slate-950" />
         <motion.div
           animate={{
             background: [
-              'radial-gradient(circle at 80% 20%, rgba(59, 130, 246, 0.08) 0%, transparent 50%)',
+              'radial-gradient(circle at 80% 20%, rgba(255, 138, 61, 0.08) 0%, transparent 50%)',
               'radial-gradient(circle at 20% 80%, rgba(14, 165, 233, 0.08) 0%, transparent 50%)',
-              'radial-gradient(circle at 80% 20%, rgba(59, 130, 246, 0.08) 0%, transparent 50%)'
+              'radial-gradient(circle at 80% 20%, rgba(255, 138, 61, 0.08) 0%, transparent 50%)'
             ]
           }}
           transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}
@@ -141,14 +164,7 @@ const Register = () => {
             transition={{ duration: 0.5 }}
             className="text-center space-y-2"
           >
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
-              className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 backdrop-blur-xl border border-cyan-500/20 mb-4"
-            >
-              <SparklesIcon className="w-8 h-8 text-cyan-400" />
-            </motion.div>
+
             <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
               Join Rider Saathi
             </h1>
@@ -167,10 +183,10 @@ const Register = () => {
           >
             <div className="relative group">
               {/* Glow Effect */}
-              <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500/20 to-cyan-600/20 rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-500" />
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500/20 to-orange-600/20 rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-500" />
               
               {/* Glass Card */}
-              <div className="relative bg-slate-900/40 dark:bg-slate-950/40 backdrop-blur-xl border border-slate-800/50 rounded-2xl p-8 shadow-2xl space-y-6">
+              <div className="relative bg-slate-900/40 dark:bg-slate-950/40 backdrop-blur-none border border-slate-800/50 rounded-2xl p-8 shadow-2xl space-y-6">
                 {/* Success Icon */}
                 <motion.div
                   initial={{ scale: 0 }}
@@ -191,7 +207,7 @@ const Register = () => {
                   <p className="text-slate-400 text-sm">
                     We've sent a verification link to
                   </p>
-                  <p className="text-cyan-400 font-semibold text-sm">
+                  <p className="text-orange-400 font-semibold text-sm">
                     {registeredEmail}
                   </p>
                 </div>
@@ -227,7 +243,7 @@ const Register = () => {
                   <p className="text-xs">Check your spam folder or{' '}
                     <button 
                       onClick={() => setShowEmailVerification(false)}
-                      className="text-cyan-400 hover:text-cyan-300 transition-colors underline"
+                      className="text-orange-400 hover:text-orange-300 transition-colors underline"
                     >
                       try registering again
                     </button>
@@ -239,10 +255,10 @@ const Register = () => {
                   onClick={() => navigate('/login')}
                   whileHover={{ scale: 1.02, y: -2 }}
                   whileTap={{ scale: 0.98 }}
-                  className="w-full relative group overflow-hidden rounded-xl py-3.5 font-semibold shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/40 transition-all duration-200"
+                  className="w-full relative group overflow-hidden rounded-xl py-3.5 font-semibold shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40 transition-all duration-200"
                 >
-                  <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-blue-600" />
-                  <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-orange-600" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-orange-400 to-orange-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
                   <span className="relative text-white">Go to Login Page</span>
                 </motion.button>
               </div>
@@ -258,12 +274,12 @@ const Register = () => {
             >
               <div className="relative group">
                 {/* Glow Effect */}
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500/20 to-blue-600/20 rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-500" />
+                <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-orange-600/20 rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-500" />
                 
                 {/* Glass Card */}
                 <form
                   onSubmit={handleSubmit}
-                  className="relative bg-slate-900/40 dark:bg-slate-950/40 backdrop-blur-xl border border-slate-800/50 rounded-2xl p-8 shadow-2xl space-y-5"
+                  className="relative bg-slate-900/40 dark:bg-slate-950/40 backdrop-blur-none border border-slate-800/50 rounded-2xl p-8 shadow-2xl space-y-5"
                 >
                   {/* Error Message */}
                   <AnimatePresence>
@@ -289,7 +305,7 @@ const Register = () => {
                     </label>
                     <div className="relative group">
                       <UserIcon className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors duration-200 ${
-                        focusedField === 'name' ? 'text-cyan-400' : 'text-slate-500'
+                        focusedField === 'name' ? 'text-orange-400' : 'text-slate-500'
                       }`} />
                       <input
                         id="name"
@@ -300,7 +316,7 @@ const Register = () => {
                         onChange={handleChange}
                         onFocus={() => setFocusedField('name')}
                         onBlur={() => setFocusedField(null)}
-                        className="w-full pl-12 pr-4 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200"
+                        className="w-full pl-12 pr-4 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200"
                         placeholder="Your full name"
                       />
                     </div>
@@ -316,7 +332,7 @@ const Register = () => {
                     </label>
                     <div className="relative group">
                       <EnvelopeIcon className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors duration-200 ${
-                        focusedField === 'email' ? 'text-cyan-400' : 'text-slate-500'
+                        focusedField === 'email' ? 'text-orange-400' : 'text-slate-500'
                       }`} />
                       <input
                         id="email"
@@ -327,8 +343,63 @@ const Register = () => {
                         onChange={handleChange}
                         onFocus={() => setFocusedField('email')}
                         onBlur={() => setFocusedField(null)}
-                        className="w-full pl-12 pr-4 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200"
+                        className="w-full pl-12 pr-4 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200"
                         placeholder="your.email@example.com"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Username Input */}
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="username"
+                      className="block text-xs font-medium text-slate-400 uppercase tracking-wider"
+                    >
+                      Unique Username
+                    </label>
+                    <div className="relative group">
+                      <UserIcon className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors duration-200 ${
+                        focusedField === 'username' ? 'text-orange-400' : 'text-slate-500'
+                      }`} />
+                      <input
+                        id="username"
+                        name="username"
+                        type="text"
+                        required
+                        value={formData.username}
+                        onChange={handleChange}
+                        onFocus={() => setFocusedField('username')}
+                        onBlur={() => setFocusedField(null)}
+                        className="w-full pl-12 pr-4 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200"
+                        placeholder="e.g. rider_raj123"
+                      />
+                    </div>
+                    <p className="text-[11px] text-slate-500">Username will be used to find you in chat and cannot be changed later.</p>
+                  </div>
+
+                  {/* State Input */}
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="state"
+                      className="block text-xs font-medium text-slate-400 uppercase tracking-wider"
+                    >
+                      State
+                    </label>
+                    <div className="relative group">
+                      <MapPinIcon className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors duration-200 ${
+                        focusedField === 'state' ? 'text-orange-400' : 'text-slate-500'
+                      }`} />
+                      <input
+                        id="state"
+                        name="state"
+                        type="text"
+                        required
+                        value={formData.state}
+                        onChange={handleChange}
+                        onFocus={() => setFocusedField('state')}
+                        onBlur={() => setFocusedField(null)}
+                        className="w-full pl-12 pr-4 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200"
+                        placeholder="Your state"
                       />
                     </div>
                   </div>
@@ -350,7 +421,7 @@ const Register = () => {
                     <div className="flex gap-2">
                       <div className="relative flex-1 group">
                         <PhoneIcon className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors duration-200 ${
-                          focusedField === 'phone' ? 'text-cyan-400' : 'text-slate-500'
+                          focusedField === 'phone' ? 'text-orange-400' : 'text-slate-500'
                         }`} />
                         <input
                           id="phone"
@@ -362,7 +433,7 @@ const Register = () => {
                           onFocus={() => setFocusedField('phone')}
                           onBlur={() => setFocusedField(null)}
                           disabled={isOtpVerified}
-                          className="w-full pl-12 pr-4 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-full pl-12 pr-4 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                           placeholder="Your phone number"
                         />
                       </div>
@@ -375,7 +446,7 @@ const Register = () => {
                         className={`px-5 py-3.5 rounded-xl font-semibold whitespace-nowrap transition-all ${
                           isOtpVerified 
                             ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 cursor-not-allowed' 
-                            : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:from-cyan-400 hover:to-blue-500 shadow-lg shadow-cyan-500/20'
+                            : 'bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-400 hover:to-orange-500 shadow-lg shadow-orange-500/20'
                         }`}
                       >
                         {isOtpVerified ? 'Verified' : 'Send OTP'}
@@ -393,7 +464,7 @@ const Register = () => {
                     </label>
                     <div className="relative group">
                       <LockClosedIcon className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors duration-200 ${
-                        focusedField === 'password' ? 'text-cyan-400' : 'text-slate-500'
+                        focusedField === 'password' ? 'text-orange-400' : 'text-slate-500'
                       }`} />
                       <input
                         id="password"
@@ -404,7 +475,7 @@ const Register = () => {
                         onChange={handleChange}
                         onFocus={() => setFocusedField('password')}
                         onBlur={() => setFocusedField(null)}
-                        className="w-full pl-12 pr-12 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200"
+                        className="w-full pl-12 pr-12 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200"
                         placeholder="Create a strong password"
                       />
                       <motion.button
@@ -412,7 +483,7 @@ const Register = () => {
                         onClick={() => setShowPassword(!showPassword)}
                         whileHover={{ scale: 1.1 }}
                         whileTap={{ scale: 0.9 }}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-400 transition-colors"
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-orange-400 transition-colors"
                       >
                         {showPassword ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
                       </motion.button>
@@ -429,7 +500,7 @@ const Register = () => {
                     </label>
                     <div className="relative group">
                       <LockClosedIcon className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors duration-200 ${
-                        focusedField === 'confirmPassword' ? 'text-cyan-400' : 'text-slate-500'
+                        focusedField === 'confirmPassword' ? 'text-orange-400' : 'text-slate-500'
                       }`} />
                       <input
                         id="confirmPassword"
@@ -440,7 +511,7 @@ const Register = () => {
                         onChange={handleChange}
                         onFocus={() => setFocusedField('confirmPassword')}
                         onBlur={() => setFocusedField(null)}
-                        className="w-full pl-12 pr-12 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200"
+                        className="w-full pl-12 pr-12 py-3.5 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/20 focus:bg-slate-900/70 outline-none transition-all duration-200"
                         placeholder="Re-enter your password"
                       />
                       <motion.button
@@ -448,7 +519,7 @@ const Register = () => {
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                         whileHover={{ scale: 1.1 }}
                         whileTap={{ scale: 0.9 }}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-400 transition-colors"
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-orange-400 transition-colors"
                       >
                         {showConfirmPassword ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
                       </motion.button>
@@ -461,15 +532,15 @@ const Register = () => {
                       id="terms"
                       type="checkbox"
                       required
-                      className="mt-1 w-4 h-4 rounded border-slate-600 bg-slate-800 text-cyan-500 focus:ring-cyan-500/20 focus:ring-2 transition-all"
+                      className="mt-1 w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/20 focus:ring-2 transition-all"
                     />
                     <label htmlFor="terms" className="text-sm text-slate-400 cursor-pointer hover:text-slate-300 transition-colors">
                       I agree to the{' '}
-                      <Link to="/terms" className="text-cyan-400 hover:text-cyan-300 transition-colors">
+                      <Link to="/terms" className="text-orange-400 hover:text-orange-300 transition-colors">
                         Terms of Service
                       </Link>{' '}
                       and{' '}
-                      <Link to="/privacy" className="text-cyan-400 hover:text-cyan-300 transition-colors">
+                      <Link to="/privacy" className="text-orange-400 hover:text-orange-300 transition-colors">
                         Privacy Policy
                       </Link>
                     </label>
@@ -482,11 +553,11 @@ const Register = () => {
                     whileHover={{ scale: loading ? 1 : 1.02, y: loading ? 0 : -2 }}
                     whileTap={{ scale: loading ? 1 : 0.98 }}
                     className={`w-full relative group overflow-hidden rounded-xl py-3.5 font-semibold transition-all duration-200 ${
-                      loading ? 'opacity-60 cursor-not-allowed' : 'shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/40'
+                      loading ? 'opacity-60 cursor-not-allowed' : 'shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40'
                     }`}
                   >
-                    <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-blue-600" />
-                    <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-orange-600" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-orange-400 to-orange-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
                     <span className="relative text-white flex items-center justify-center gap-2">
                       {loading ? (
                         <>
@@ -516,7 +587,7 @@ const Register = () => {
                 Already have an account?{' '}
                 <Link 
                   to="/login" 
-                  className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
+                  className="text-orange-400 hover:text-orange-300 font-medium transition-colors"
                 >
                   Sign in here
                 </Link>
@@ -532,7 +603,7 @@ const Register = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+              className="fixed inset-0 bg-black/70 backdrop-blur-none flex items-center justify-center p-4 z-50"
             >
               <motion.div
                 initial={{ scale: 0.95, opacity: 0 }}
@@ -542,15 +613,15 @@ const Register = () => {
               >
                 <div className="relative group">
                   {/* Glow Effect */}
-                  <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500/30 to-blue-600/30 rounded-2xl blur opacity-50 group-hover:opacity-75 transition duration-500" />
+                  <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/30 to-orange-600/30 rounded-2xl blur opacity-50 group-hover:opacity-75 transition duration-500" />
                   
                   {/* Glass Card */}
-                  <div className="relative bg-slate-900/90 dark:bg-slate-950/90 backdrop-blur-xl border border-slate-800/50 rounded-2xl p-8 shadow-2xl space-y-6">
+                  <div className="relative bg-slate-900/90 dark:bg-slate-950/90 backdrop-blur-none border border-slate-800/50 rounded-2xl p-8 shadow-2xl space-y-6">
                     <h3 className="text-2xl font-bold text-white">Verify Phone Number</h3>
                     
                     <p className="text-slate-400 text-sm">
                       Enter the 6-digit OTP sent to{' '}
-                      <span className="text-cyan-400 font-semibold">{formData.phone}</span>
+                      <span className="text-orange-400 font-semibold">{formData.phone}</span>
                     </p>
 
                     <div className="space-y-2">
@@ -566,7 +637,7 @@ const Register = () => {
                           setOtpError('')
                         }}
                         placeholder="000000"
-                        className="w-full px-4 py-4 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white text-center text-2xl tracking-widest placeholder-slate-600 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 outline-none transition-all"
+                        className="w-full px-4 py-4 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white text-center text-2xl tracking-widest placeholder-slate-600 focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/20 outline-none transition-all"
                         autoFocus
                       />
                     </div>
@@ -581,10 +652,10 @@ const Register = () => {
                       </motion.div>
                     )}
 
-                    <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-xl p-3">
+                    <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-3">
                       <p className="text-xs text-slate-300">
-                        <span className="text-cyan-400 font-bold">💡 Test Mode:</span> Use OTP{' '}
-                        <span className="font-mono text-cyan-400 font-bold">654321</span> for verification
+                        <span className="text-orange-400 font-bold">💡 Test Mode:</span> Use OTP{' '}
+                        <span className="font-mono text-orange-400 font-bold">654321</span> for verification
                       </p>
                     </div>
 
@@ -595,11 +666,11 @@ const Register = () => {
                         whileHover={{ scale: otp.length === 6 ? 1.02 : 1 }}
                         whileTap={{ scale: otp.length === 6 ? 0.98 : 1 }}
                         className={`flex-1 relative group overflow-hidden rounded-xl py-3.5 font-semibold transition-all ${
-                          otp.length !== 6 ? 'opacity-50 cursor-not-allowed' : 'shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/40'
+                          otp.length !== 6 ? 'opacity-50 cursor-not-allowed' : 'shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40'
                         }`}
                       >
-                        <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-blue-600" />
-                        <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-orange-600" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-orange-400 to-orange-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
                         <span className="relative text-white">Verify OTP</span>
                       </motion.button>
                       <motion.button
@@ -618,7 +689,7 @@ const Register = () => {
 
                     <button
                       onClick={handleSendOtp}
-                      className="w-full text-sm text-cyan-400 hover:text-cyan-300 transition-colors"
+                      className="w-full text-sm text-orange-400 hover:text-orange-300 transition-colors"
                     >
                       Resend OTP
                     </button>

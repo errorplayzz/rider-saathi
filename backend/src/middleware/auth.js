@@ -29,7 +29,10 @@ export const auth = async (req, res, next) => {
           _id: 'demo-user-id',
           id: 'demo-user-id',
           userId: 'demo-user-id',
-          email: 'demo@ridersathi.com'
+          email: 'demo@ridersathi.com',
+          name: 'Demo Rider',
+          username: 'demo_rider',
+          avatar: null
         }
         return next()
       }
@@ -38,18 +41,42 @@ export const auth = async (req, res, next) => {
       const { data: { user: supabaseUser }, error: supabaseError } = await supabase.auth.getUser(token)
       
       if (supabaseUser && !supabaseError) {
+        const metadataUsername = (supabaseUser.user_metadata?.username || '').toLowerCase().trim()
+        const metadataState = (supabaseUser.user_metadata?.state || '').trim()
         // Valid Supabase token - find or create MongoDB user
         let mongoUser = await User.findOne({ email: supabaseUser.email })
         
         if (!mongoUser) {
+          let usernameForCreate
+          const canUseMetadataUsername = /^[a-z0-9_]{3,20}$/.test(metadataUsername)
+          if (canUseMetadataUsername) {
+            const existingUsername = await User.findOne({ username: metadataUsername }).select('_id')
+            usernameForCreate = existingUsername ? undefined : metadataUsername
+          }
+
           // Create new MongoDB user for Supabase user
           mongoUser = new User({
             name: supabaseUser.user_metadata?.name || supabaseUser.email.split('@')[0],
             email: supabaseUser.email,
             password: 'supabase-auth-' + Math.random().toString(36), // Random password, won't be used
             isActive: true,
-            isVerified: true
+            isVerified: true,
+            state: metadataState || undefined,
+            username: usernameForCreate,
+            usernameLocked: !!usernameForCreate
           })
+          await mongoUser.save()
+        } else if (!mongoUser.username && /^[a-z0-9_]{3,20}$/.test(metadataUsername)) {
+          const existingUsername = await User.findOne({ username: metadataUsername }).select('_id')
+          if (!existingUsername) {
+            mongoUser.username = metadataUsername
+            mongoUser.usernameLocked = true
+          }
+
+          if (!mongoUser.state && metadataState) {
+            mongoUser.state = metadataState
+          }
+
           await mongoUser.save()
         }
         
@@ -65,6 +92,9 @@ export const auth = async (req, res, next) => {
           id: mongoUser._id,
           userId: mongoUser._id,
           email: mongoUser.email,
+          name: mongoUser.name,
+          username: mongoUser.username,
+          avatar: mongoUser.avatar,
           supabaseId: supabaseUser.id
         }
         return next()
@@ -89,7 +119,15 @@ export const auth = async (req, res, next) => {
         })
       }
 
-      req.user = { _id: user._id, id: user._id, userId: user._id, email: user.email }
+      req.user = {
+        _id: user._id,
+        id: user._id,
+        userId: user._id,
+        email: user.email,
+        name: user.name,
+        username: user.username,
+        avatar: user.avatar
+      }
       next()
     } catch (error) {
       console.error('Token verification error:', error.message)
@@ -133,6 +171,36 @@ export const socketAuth = async (socket, next) => {
       socket.userId = 'demo-user-id'
       socket.userEmail = 'demo@ridersathi.com'
       return next()
+    }
+
+    // Accept Supabase access tokens for socket auth (same as HTTP auth middleware).
+    try {
+      const { data: { user: supabaseUser }, error: supabaseError } = await supabase.auth.getUser(token)
+
+      if (supabaseUser && !supabaseError) {
+        let mongoUser = await User.findOne({ email: supabaseUser.email })
+
+        if (!mongoUser) {
+          mongoUser = new User({
+            name: supabaseUser.user_metadata?.name || supabaseUser.email.split('@')[0],
+            email: supabaseUser.email,
+            password: 'supabase-socket-' + Math.random().toString(36),
+            isActive: true,
+            isVerified: true
+          })
+          await mongoUser.save()
+        }
+
+        if (!mongoUser.isActive) {
+          return next(new Error('Authentication failed'))
+        }
+
+        socket.userId = mongoUser._id.toString()
+        socket.userEmail = mongoUser.email
+        return next()
+      }
+    } catch (supabaseValidationError) {
+      console.warn('Socket auth: Supabase token validation failed, trying JWT fallback:', supabaseValidationError.message)
     }
 
     let decoded

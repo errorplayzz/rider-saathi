@@ -53,6 +53,10 @@ const Profile = () => {
     bikeYear: '',
     bikeColor: ''
   })
+  const [usernameForm, setUsernameForm] = useState('')
+  const [usernameLocked, setUsernameLocked] = useState(false)
+  const [usernameLoading, setUsernameLoading] = useState(false)
+  const [usernameSaving, setUsernameSaving] = useState(false)
   const [avatarPreview, setAvatarPreview] = useState(null)
   const [isEditing, setIsEditing] = useState(false)
   const [isEditingBike, setIsEditingBike] = useState(false)
@@ -91,7 +95,75 @@ const Profile = () => {
     fetchAchievements()
     fetchRideHistory()
     fetchEmergencyContacts()
+    fetchBackendIdentity()
   }, [])
+
+  const fetchBackendIdentity = async () => {
+    try {
+      setUsernameLoading(true)
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token || localStorage.getItem('token')
+      if (!token) return
+
+      const API_BASE = (import.meta.env.VITE_API_URL || `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'}/api`).replace(/\/$/, '')
+      const res = await fetch(`${API_BASE}/auth/profile`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+
+      const body = await res.json()
+      if (res.ok && body?.user) {
+        setUsernameForm(body.user.username || '')
+        setUsernameLocked(!!body.user.usernameLocked || !!body.user.username)
+      }
+    } catch (e) {
+      console.error('Failed to load backend identity:', e)
+    } finally {
+      setUsernameLoading(false)
+    }
+  }
+
+  const claimUsername = async () => {
+    const normalized = (usernameForm || '').toLowerCase().trim()
+    if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
+      alert('Username must be 3-20 chars (lowercase letters, numbers, underscore only)')
+      return
+    }
+
+    try {
+      setUsernameSaving(true)
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token || localStorage.getItem('token')
+      if (!token) {
+        alert('Please log in again')
+        return
+      }
+
+      const API_BASE = (import.meta.env.VITE_API_URL || `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001'}/api`).replace(/\/$/, '')
+      const res = await fetch(`${API_BASE}/auth/profile`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username: normalized })
+      })
+
+      const body = await res.json()
+      if (!res.ok || !body?.success) {
+        alert(body?.message || 'Failed to set username')
+        return
+      }
+
+      setUsernameForm(body?.user?.username || normalized)
+      setUsernameLocked(true)
+      alert('Username set successfully. It is now locked.')
+    } catch (e) {
+      console.error('Set username failed:', e)
+      alert('Failed to set username')
+    } finally {
+      setUsernameSaving(false)
+    }
+  }
 
   const fetchUserProfile = async () => {
     try {
@@ -473,16 +545,16 @@ const Profile = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <motion.div
                 whileHover={{ y: -2 }}
-                className="lg:col-span-2 relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]"
+                className="lg:col-span-2 relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-blue-500/10 pointer-events-none" />
+                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_80%_20%,rgba(154,137,120,0.08),transparent_55%)]" />
                 <div className="relative p-6">
                   <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
                     <div className="flex items-center gap-5">
                       <div className="relative">
-                        <div className="absolute inset-0 rounded-full ring-2 ring-cyan-400/50 animate-pulse" />
-                        <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-cyan-500/20 to-blue-500/20 blur-md" />
-                        <div className="relative w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center ring-2 ring-cyan-300/40 shadow-lg">
+                        <div className="absolute inset-0 rounded-full ring-2 ring-orange-400/50 animate-pulse" />
+                        <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-orange-500/20 to-orange-500/20 blur-md" />
+                        <div className="relative w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center ring-2 ring-orange-300/40 shadow-lg">
                           {avatarPreview ? (
                             <img src={avatarPreview} alt="avatar" className="w-full h-full object-cover" />
                           ) : profileForm.avatar ? (
@@ -495,7 +567,7 @@ const Profile = () => {
                         </div>
                         <button
                           onClick={() => document.getElementById('avatar-input').click()}
-                          className="absolute -bottom-1 -right-1 p-2 bg-slate-900/80 text-cyan-200 rounded-full hover:text-white hover:bg-slate-900 transition-all shadow-lg ring-1 ring-cyan-400/30"
+                          className="absolute -bottom-1 -right-1 p-2 bg-slate-900/80 text-orange-200 rounded-full hover:text-white hover:bg-slate-900 transition-all shadow-lg ring-1 ring-orange-400/30"
                           title="Change avatar"
                         >
                           <CameraIcon className="w-4 h-4" />
@@ -507,15 +579,15 @@ const Profile = () => {
                           {profile?.name || user?.user_metadata?.name || 'Anonymous Rider'}
                         </h2>
                         <div className="flex flex-wrap items-center gap-4 mt-2 text-sm">
-                          <div className="flex items-center gap-2 text-cyan-500">
-                            <div className="w-8 h-8 rounded-full border-2 border-cyan-500/60 flex items-center justify-center">
+                          <div className="flex items-center gap-2 text-orange-500">
+                            <div className="w-8 h-8 rounded-full border-2 border-orange-500/60 flex items-center justify-center">
                               <StarIcon className="w-4 h-4" />
                             </div>
                             <span className="font-semibold text-slate-800 dark:text-slate-100">{userStats?.rating || '5.0'}</span>
                             <span className="text-slate-500 dark:text-slate-400">rating</span>
                           </div>
                           <div className="h-4 w-px bg-slate-300/60 dark:bg-slate-700/60" />
-                          <div className="flex items-center gap-2 text-blue-500">
+                          <div className="flex items-center gap-2 text-orange-500">
                             <TrophyIcon className="w-4 h-4" />
                             <span className="font-semibold text-slate-800 dark:text-slate-100">{userStats?.rewardPoints || 0}</span>
                             <span className="text-slate-500 dark:text-slate-400">points</span>
@@ -554,7 +626,7 @@ const Profile = () => {
                         className="rounded-xl p-4 bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-sm"
                       >
                         <div className="flex items-center justify-between">
-                          <stat.icon className="w-5 h-5 text-cyan-500" />
+                          <stat.icon className="w-5 h-5 text-orange-500" />
                           <span className="text-xs text-slate-500 dark:text-slate-400">#{idx + 1}</span>
                         </div>
                         <div className="mt-2 text-xl font-bold text-slate-900 dark:text-white">{stat.value}</div>
@@ -601,9 +673,9 @@ const Profile = () => {
 
               <motion.div
                 whileHover={{ y: -2 }}
-                className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]"
+                className="relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-cyan-500/10 pointer-events-none" />
+                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_80%_20%,rgba(154,137,120,0.08),transparent_55%)]" />
                 <div className="relative p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">System Status</h3>
@@ -616,13 +688,13 @@ const Profile = () => {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-600 dark:text-slate-300 text-sm">Two-Factor</span>
-                      <span className={`text-xs font-semibold uppercase tracking-widest ${twoFAEnabled ? 'text-cyan-400' : 'text-slate-400'}`}>
+                      <span className={`text-xs font-semibold uppercase tracking-widest ${twoFAEnabled ? 'text-orange-400' : 'text-slate-400'}`}>
                         {twoFAEnabled ? 'Enabled' : 'Offline'}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-600 dark:text-slate-300 text-sm">Notifications</span>
-                      <span className={`text-xs font-semibold uppercase tracking-widest ${settings.notifications ? 'text-cyan-400' : 'text-slate-400'}`}>
+                      <span className={`text-xs font-semibold uppercase tracking-widest ${settings.notifications ? 'text-orange-400' : 'text-slate-400'}`}>
                         {settings.notifications ? 'Online' : 'Muted'}
                       </span>
                     </div>
@@ -641,9 +713,9 @@ const Profile = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <motion.div
                 whileHover={{ y: -2 }}
-                className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]"
+                className="relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-blue-500/10 pointer-events-none" />
+                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_80%_20%,rgba(154,137,120,0.08),transparent_55%)]" />
                 <div className="relative p-6">
                   <div className="flex items-center justify-between mb-6">
                     <div>
@@ -652,13 +724,45 @@ const Profile = () => {
                     </div>
                     <button
                       onClick={() => setIsEditing(!isEditing)}
-                      className="p-2 rounded-lg text-slate-500 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all"
+                      className="p-2 rounded-lg text-slate-500 hover:text-orange-400 hover:bg-orange-500/10 transition-all"
                     >
                       <PencilIcon className="w-5 h-5" />
                     </button>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="md:col-span-2">
+                      <label className="block text-[11px] uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2">Username (for chat discovery)</label>
+                      {usernameLoading ? (
+                        <p className="text-slate-400 text-sm">Loading username...</p>
+                      ) : usernameLocked ? (
+                        <div className="flex items-center gap-3">
+                          <p className="text-slate-900 dark:text-white font-medium">@{usernameForm || 'set'}</p>
+                          <span className="text-[10px] uppercase tracking-wider px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/30">Locked</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <input
+                            type="text"
+                            value={usernameForm}
+                            onChange={(e) => setUsernameForm((e.target.value || '').toLowerCase())}
+                            placeholder="e.g. rider_raj123"
+                            className="flex-1 px-4 py-2 rounded-lg bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/70 dark:ring-slate-700/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/40"
+                          />
+                          <button
+                            onClick={claimUsername}
+                            disabled={usernameSaving}
+                            className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-400 transition-all disabled:opacity-60"
+                          >
+                            {usernameSaving ? 'Saving...' : 'Set Username'}
+                          </button>
+                        </div>
+                      )}
+                      {!usernameLocked && (
+                        <p className="text-[11px] text-slate-500 mt-2">You can set username only once. This will be used by others to find you in chat.</p>
+                      )}
+                    </div>
+
                     <div>
                       <label className="block text-[11px] uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2">Full Name</label>
                       {isEditing ? (
@@ -666,7 +770,7 @@ const Profile = () => {
                           type="text"
                           value={profileForm.name}
                           onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
-                          className="w-full px-4 py-2 rounded-lg bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/70 dark:ring-slate-700/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+                          className="w-full px-4 py-2 rounded-lg bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/70 dark:ring-slate-700/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/40"
                         />
                       ) : (
                         <p className="text-slate-900 dark:text-white font-medium">{profileForm.name || 'Not provided'}</p>
@@ -676,7 +780,7 @@ const Profile = () => {
                     <div>
                       <label className="block text-[11px] uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2">Email</label>
                       <p className="text-slate-900 dark:text-white font-medium flex items-center gap-2">
-                        <EnvelopeIcon className="w-4 h-4 text-cyan-400" />
+                        <EnvelopeIcon className="w-4 h-4 text-orange-400" />
                         {profileForm.email}
                       </p>
                     </div>
@@ -688,11 +792,11 @@ const Profile = () => {
                           type="tel"
                           value={profileForm.phone}
                           onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
-                          className="w-full px-4 py-2 rounded-lg bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/70 dark:ring-slate-700/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+                          className="w-full px-4 py-2 rounded-lg bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/70 dark:ring-slate-700/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/40"
                         />
                       ) : (
                         <p className="text-slate-900 dark:text-white font-medium flex items-center gap-2">
-                          <PhoneIcon className="w-4 h-4 text-cyan-400" />
+                          <PhoneIcon className="w-4 h-4 text-orange-400" />
                           {profileForm.phone || 'Not provided'}
                         </p>
                       )}
@@ -705,11 +809,11 @@ const Profile = () => {
                           type="tel"
                           value={profileForm.emergencyContact}
                           onChange={(e) => setProfileForm({ ...profileForm, emergencyContact: e.target.value })}
-                          className="w-full px-4 py-2 rounded-lg bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/70 dark:ring-slate-700/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+                          className="w-full px-4 py-2 rounded-lg bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/70 dark:ring-slate-700/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/40"
                         />
                       ) : (
                         <p className="text-slate-900 dark:text-white font-medium flex items-center gap-2">
-                          <PhoneIcon className="w-4 h-4 text-cyan-400" />
+                          <PhoneIcon className="w-4 h-4 text-orange-400" />
                           {profileForm.emergencyContact || 'Not provided'}
                         </p>
                       )}
@@ -720,7 +824,7 @@ const Profile = () => {
                     <div className="flex flex-wrap gap-3 mt-6">
                       <button
                         onClick={updateProfile}
-                        className="px-5 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-400 transition-all shadow-lg shadow-cyan-500/20"
+                        className="px-5 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-400 transition-all shadow-lg shadow-orange-500/20"
                       >
                         Save Changes
                       </button>
@@ -737,9 +841,9 @@ const Profile = () => {
 
               <motion.div
                 whileHover={{ y: -2 }}
-                className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]"
+                className="relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-cyan-500/10 pointer-events-none" />
+                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_80%_20%,rgba(154,137,120,0.08),transparent_55%)]" />
                 <div className="relative p-6">
                   <div className="flex items-center justify-between mb-6">
                     <div>
@@ -748,7 +852,7 @@ const Profile = () => {
                     </div>
                     <button
                       onClick={() => setIsEditingBike(!isEditingBike)}
-                      className="p-2 rounded-lg text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 transition-all"
+                      className="p-2 rounded-lg text-slate-500 hover:text-orange-400 hover:bg-orange-500/10 transition-all"
                     >
                       <PencilIcon className="w-5 h-5" />
                     </button>
@@ -762,7 +866,7 @@ const Profile = () => {
                           type="text"
                           value={profileForm.bikeModel}
                           onChange={(e) => setProfileForm({ ...profileForm, bikeModel: e.target.value })}
-                          className="w-full px-4 py-2 rounded-lg bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/70 dark:ring-slate-700/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                          className="w-full px-4 py-2 rounded-lg bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/70 dark:ring-slate-700/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/40"
                         />
                       ) : (
                         <p className="text-slate-900 dark:text-white font-medium">{bikeDetails.model || 'Not provided'}</p>
@@ -776,7 +880,7 @@ const Profile = () => {
                           type="text"
                           value={profileForm.bikeYear}
                           onChange={(e) => setProfileForm({ ...profileForm, bikeYear: e.target.value })}
-                          className="w-full px-4 py-2 rounded-lg bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/70 dark:ring-slate-700/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                          className="w-full px-4 py-2 rounded-lg bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/70 dark:ring-slate-700/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/40"
                         />
                       ) : (
                         <p className="text-slate-900 dark:text-white font-medium">{bikeDetails.year || 'Not provided'}</p>
@@ -790,7 +894,7 @@ const Profile = () => {
                           type="text"
                           value={profileForm.bikeColor}
                           onChange={(e) => setProfileForm({ ...profileForm, bikeColor: e.target.value })}
-                          className="w-full px-4 py-2 rounded-lg bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/70 dark:ring-slate-700/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                          className="w-full px-4 py-2 rounded-lg bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/70 dark:ring-slate-700/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/40"
                         />
                       ) : (
                         <p className="text-slate-900 dark:text-white font-medium">{bikeDetails.color || 'Not provided'}</p>
@@ -808,7 +912,7 @@ const Profile = () => {
                       <button
                         onClick={saveBikeDetails}
                         disabled={bikeSaving}
-                        className="px-5 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-400 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-60"
+                        className="px-5 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-400 transition-all shadow-lg shadow-orange-500/20 disabled:opacity-60"
                       >
                         {bikeSaving ? 'Saving...' : 'Save Telemetry'}
                       </button>
@@ -827,9 +931,9 @@ const Profile = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <motion.div
                 whileHover={{ y: -2 }}
-                className="lg:col-span-2 relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]"
+                className="lg:col-span-2 relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-transparent to-cyan-500/10 pointer-events-none" />
+                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_12%_10%,rgba(16,185,129,0.08),transparent_55%)]" />
                 <div className="relative p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div>
@@ -865,9 +969,9 @@ const Profile = () => {
 
               <motion.div
                 whileHover={{ y: -2 }}
-                className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]"
+                className="relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 via-transparent to-orange-500/10 pointer-events-none" />
+                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_20%_15%,rgba(239,68,68,0.1),transparent_55%)]" />
                 <div className="relative p-6">
                   <h3 className="text-lg font-semibold text-red-500 mb-3">Danger Zone</h3>
                   <button
@@ -895,17 +999,17 @@ const Profile = () => {
           >
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
               {[
-                { label: 'Total Rides', value: userStats?.totalRides || 0, icon: MapPinIcon, accent: 'text-cyan-500' },
-                { label: 'Total KM', value: userStats?.totalDistance ? (userStats.totalDistance / 1000).toFixed(1) : '0', icon: ChartBarIcon, accent: 'text-blue-500' },
+                { label: 'Total Rides', value: userStats?.totalRides || 0, icon: MapPinIcon, accent: 'text-orange-500' },
+                { label: 'Total KM', value: userStats?.totalDistance ? (userStats.totalDistance / 1000).toFixed(1) : '0', icon: ChartBarIcon, accent: 'text-orange-500' },
                 { label: 'Reward Points', value: userStats?.rewardPoints || 0, icon: TrophyIcon, accent: 'text-amber-500' },
                 { label: 'People Helped', value: userStats?.helpGiven || 0, icon: StarIcon, accent: 'text-emerald-500' }
               ].map((stat) => (
                 <motion.div
                   key={stat.label}
                   whileHover={{ y: -2 }}
-                  className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]"
+                  className="relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]"
                 >
-                  <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-blue-500/10 pointer-events-none" />
+                  <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_80%_20%,rgba(154,137,120,0.08),transparent_55%)]" />
                   <div className="relative p-6">
                     <div className="flex items-center justify-between">
                       <stat.icon className={`w-6 h-6 ${stat.accent}`} />
@@ -921,16 +1025,16 @@ const Profile = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <motion.div
                 whileHover={{ y: -2 }}
-                className="lg:col-span-2 relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]"
+                className="lg:col-span-2 relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-cyan-500/10 pointer-events-none" />
+                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_80%_20%,rgba(154,137,120,0.08),transparent_55%)]" />
                 <div className="relative p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Monthly Summary</h3>
                       <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400 mt-1">Performance Window</p>
                     </div>
-                    <CalendarIcon className="w-5 h-5 text-cyan-500" />
+                    <CalendarIcon className="w-5 h-5 text-orange-500" />
                   </div>
                   <div className="space-y-4">
                     <div className="flex items-center justify-between p-4 rounded-xl bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/60 dark:ring-slate-700/50">
@@ -953,9 +1057,9 @@ const Profile = () => {
 
               <motion.div
                 whileHover={{ y: -2 }}
-                className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]"
+                className="relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-transparent to-cyan-500/10 pointer-events-none" />
+                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_12%_10%,rgba(16,185,129,0.08),transparent_55%)]" />
                 <div className="relative p-6">
                   <div className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Telemetry</div>
                   <div className="mt-4 space-y-3">
@@ -969,7 +1073,7 @@ const Profile = () => {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-slate-600 dark:text-slate-300">Signal Quality</span>
-                      <span className="text-xs text-cyan-500">Optimal</span>
+                      <span className="text-xs text-orange-500">Optimal</span>
                     </div>
                   </div>
                 </div>
@@ -988,16 +1092,16 @@ const Profile = () => {
             {achievements.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 {[
-                  { label: 'Unlocked', value: achievements.filter(a => a.isCompleted).length, accent: 'text-cyan-500' },
+                  { label: 'Unlocked', value: achievements.filter(a => a.isCompleted).length, accent: 'text-orange-500' },
                   { label: 'Total', value: achievements.length, accent: 'text-amber-500' },
                   { label: 'Points Earned', value: achievements.filter(a => a.isCompleted).reduce((sum, a) => sum + (a.rewardPoints || 0), 0), accent: 'text-emerald-500' }
                 ].map((item) => (
                   <motion.div
                     key={item.label}
                     whileHover={{ y: -2 }}
-                    className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]"
+                    className="relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]"
                   >
-                    <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-blue-500/10 pointer-events-none" />
+                    <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_80%_20%,rgba(154,137,120,0.08),transparent_55%)]" />
                     <div className="relative p-6 text-center">
                       <div className={`text-3xl font-bold ${item.accent}`}>{item.value}</div>
                       <div className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400 mt-2">{item.label}</div>
@@ -1018,8 +1122,8 @@ const Profile = () => {
                   bronze: 'from-orange-400/20 to-orange-600/30',
                   silver: 'from-slate-300/20 to-slate-500/30',
                   gold: 'from-amber-300/20 to-amber-500/30',
-                  platinum: 'from-blue-400/20 to-indigo-500/30',
-                  diamond: 'from-cyan-400/20 to-blue-600/30'
+                  platinum: 'from-orange-400/20 to-orange-500/30',
+                  diamond: 'from-orange-400/20 to-orange-600/30'
                 }
 
                 const tierColor = tierColors[achievement.tier] || tierColors.bronze
@@ -1030,7 +1134,7 @@ const Profile = () => {
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.05 }}
-                    className={`relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)] ${!completed ? 'opacity-80' : ''}`}
+                    className={`relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)] ${!completed ? 'opacity-80' : ''}`}
                   >
                     <div className={`absolute inset-0 bg-gradient-to-br ${tierColor} pointer-events-none`} />
                     <div className="relative p-6 text-center">
@@ -1055,7 +1159,7 @@ const Profile = () => {
                           </div>
                           <div className="w-full bg-slate-200/70 dark:bg-slate-800 rounded-full h-2">
                             <div
-                              className="bg-cyan-500 h-2 rounded-full transition-all duration-500"
+                              className="bg-orange-500 h-2 rounded-full transition-all duration-500"
                               style={{ width: `${progressPercent}%` }}
                             />
                           </div>
@@ -1068,7 +1172,7 @@ const Profile = () => {
                             <span>✓</span>
                             <span>Completed</span>
                           </div>
-                          <div className="text-xs text-cyan-500">
+                          <div className="text-xs text-orange-500">
                             {achievement.completedAt && formatDate(achievement.completedAt)}
                           </div>
                           <div className="text-xs text-amber-500 font-bold">
@@ -1084,8 +1188,8 @@ const Profile = () => {
                   </motion.div>
                 )
               }) : (
-                <div className="col-span-full relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]">
-                  <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-blue-500/10 pointer-events-none" />
+                <div className="col-span-full relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]">
+                  <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_80%_20%,rgba(154,137,120,0.08),transparent_55%)]" />
                   <div className="relative p-12 text-center">
                     <TrophyIcon className="w-16 h-16 text-slate-400 mx-auto mb-4" />
                     <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">No Achievements Yet</h3>
@@ -1108,14 +1212,14 @@ const Profile = () => {
               <motion.div
                 key={index}
                 whileHover={{ y: -2 }}
-                className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]"
+                className="relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-blue-500/10 pointer-events-none" />
+                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_80%_20%,rgba(154,137,120,0.08),transparent_55%)]" />
                 <div className="relative p-6">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-xl bg-white/70 dark:bg-slate-900/60 ring-1 ring-slate-200/60 dark:ring-slate-700/50 flex items-center justify-center">
-                        <MapPinIcon className="w-6 h-6 text-cyan-500" />
+                        <MapPinIcon className="w-6 h-6 text-orange-500" />
                       </div>
                       <div>
                         <h3 className="text-slate-900 dark:text-white font-semibold">
@@ -1140,8 +1244,8 @@ const Profile = () => {
                 </div>
               </motion.div>
             )) : (
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]">
-                <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-blue-500/10 pointer-events-none" />
+              <div className="relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]">
+                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_80%_20%,rgba(154,137,120,0.08),transparent_55%)]" />
                 <div className="relative p-12 text-center">
                   <MapPinIcon className="w-14 h-14 text-slate-400 mx-auto mb-3" />
                   <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">No Rides Yet</h3>
@@ -1162,16 +1266,16 @@ const Profile = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <motion.div
                 whileHover={{ y: -2 }}
-                className="lg:col-span-2 relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]"
+                className="lg:col-span-2 relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-blue-500/10 pointer-events-none" />
+                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_80%_20%,rgba(154,137,120,0.08),transparent_55%)]" />
                 <div className="relative p-6">
                   <div className="flex items-center justify-between mb-6">
                     <div>
                       <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Notification Preferences</h3>
                       <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400 mt-1">Signal Routing</p>
                     </div>
-                    <BellIcon className="w-5 h-5 text-cyan-500" />
+                    <BellIcon className="w-5 h-5 text-orange-500" />
                   </div>
                   <div className="space-y-4">
                     {/* Theme Mode Toggle */}
@@ -1189,7 +1293,7 @@ const Profile = () => {
                           onChange={toggleTheme}
                           className="sr-only peer"
                         />
-                        <div className="w-11 h-6 bg-slate-200/70 dark:bg-slate-800 ring-1 ring-slate-300/40 dark:ring-slate-700/60 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
+                        <div className="w-11 h-6 bg-slate-200/70 dark:bg-slate-800 ring-1 ring-slate-300/40 dark:ring-slate-700/60 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
                       </label>
                     </div>
 
@@ -1214,7 +1318,7 @@ const Profile = () => {
                             onChange={(e) => updateSettings(key, e.target.checked)}
                             className="sr-only peer"
                           />
-                          <div className="w-11 h-6 bg-slate-200/70 dark:bg-slate-800 ring-1 ring-slate-300/40 dark:ring-slate-700/60 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
+                          <div className="w-11 h-6 bg-slate-200/70 dark:bg-slate-800 ring-1 ring-slate-300/40 dark:ring-slate-700/60 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
                         </label>
                       </div>
                     ))}
@@ -1224,9 +1328,9 @@ const Profile = () => {
 
               <motion.div
                 whileHover={{ y: -2 }}
-                className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-slate-200/60 dark:ring-slate-700/50 shadow-[0_18px_50px_-25px_rgba(15,23,42,0.4)] dark:shadow-[0_20px_55px_-30px_rgba(0,0,0,0.7)]"
+                className="relative overflow-hidden rounded-2xl bg-[#131316] ring-1 ring-white/10 shadow-[0_18px_45px_-28px_rgba(0,0,0,0.78)]"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-transparent to-cyan-500/10 pointer-events-none" />
+                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_12%_10%,rgba(16,185,129,0.08),transparent_55%)]" />
                 <div className="relative p-6">
                   <div className="flex items-center justify-between mb-6">
                     <div>
@@ -1279,9 +1383,9 @@ const Profile = () => {
 
             <motion.div
               whileHover={{ y: -2 }}
-              className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/90 via-white/80 to-slate-100/80 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-950/80 ring-1 ring-red-500/20 shadow-[0_18px_50px_-25px_rgba(239,68,68,0.3)]"
+              className="relative overflow-hidden rounded-2xl bg-[#151214] ring-1 ring-red-500/25 shadow-[0_18px_45px_-28px_rgba(80,12,12,0.55)]"
             >
-              <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 via-transparent to-orange-500/10 pointer-events-none" />
+              <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_20%_15%,rgba(239,68,68,0.1),transparent_55%)]" />
               <div className="relative p-6">
                 <h3 className="text-lg font-semibold text-red-500 mb-3">Danger Zone</h3>
                 <button
@@ -1305,7 +1409,7 @@ const Profile = () => {
   }
 
   return (
-    <div className="min-h-screen pt-20 px-4 pb-12 bg-gradient-to-b from-slate-50 via-slate-100 to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-900 dark:text-alabaster">
+    <div className="dark min-h-screen pt-20 px-4 pb-12 text-slate-100 bg-[#060607] bg-[radial-gradient(circle_at_12%_8%,rgba(178,138,94,0.12),transparent_38%),radial-gradient(circle_at_88%_18%,rgba(30,41,59,0.26),transparent_42%),linear-gradient(180deg,#060607_0%,#0a0a0c_45%,#060607_100%)]">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <motion.div
@@ -1313,10 +1417,10 @@ const Profile = () => {
           animate={{ opacity: 1, y: 0 }}
           className="mb-12"
         >
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-3">
+          <h1 className="text-2xl md:text-3xl font-bold text-slate-100 mb-3">
             Rider Control Panel
           </h1>
-          <p className="text-base text-slate-600 dark:text-slate-400">Mission-grade identity, telemetry, and system controls</p>
+          <p className="text-base text-slate-400">Mission-grade identity, telemetry, and system controls</p>
         </motion.div>
 
         {/* Navigation Tabs */}
@@ -1326,7 +1430,7 @@ const Profile = () => {
           transition={{ delay: 0.1 }}
           className="mb-8 overflow-x-auto"
         >
-          <div className="flex space-x-2 bg-white/80 dark:bg-slate-900/70 p-1.5 rounded-xl min-w-max shadow-lg ring-1 ring-slate-200/60 dark:ring-slate-700/60">
+          <div className="flex space-x-2 bg-[#101114] p-1.5 rounded-xl min-w-max shadow-lg ring-1 ring-white/10">
             {tabs.map((tab) => {
               const Icon = tab.icon
               return (
@@ -1409,7 +1513,7 @@ const Profile = () => {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+            className="fixed inset-0 bg-black/60 backdrop-blur-none flex items-center justify-center p-4 z-50"
             onClick={() => setShowPrivacyModal(false)}
           >
             <motion.div
@@ -1493,7 +1597,7 @@ const Profile = () => {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+            className="fixed inset-0 bg-black/60 backdrop-blur-none flex items-center justify-center p-4 z-50"
             onClick={() => setShow2FAModal(false)}
           >
             <motion.div
@@ -1514,7 +1618,7 @@ const Profile = () => {
                   </p>
                   <button
                     onClick={handle2FASetup}
-                    className="w-full px-4 py-3 bg-gradient-to-r from-emerald-500 to-cyan-600 text-white font-medium rounded-lg hover:from-emerald-400 hover:to-cyan-500 transition-all shadow-lg"
+                    className="w-full px-4 py-3 bg-gradient-to-r from-emerald-500 to-orange-600 text-white font-medium rounded-lg hover:from-emerald-400 hover:to-orange-500 transition-all shadow-lg"
                   >
                     Set Up 2FA
                   </button>
@@ -1544,7 +1648,7 @@ const Profile = () => {
                   />
                   <button
                     onClick={handle2FAVerify}
-                    className="w-full px-4 py-3 bg-gradient-to-r from-emerald-500 to-cyan-600 text-white font-medium rounded-lg hover:from-emerald-400 hover:to-cyan-500 transition-all shadow-lg"
+                    className="w-full px-4 py-3 bg-gradient-to-r from-emerald-500 to-orange-600 text-white font-medium rounded-lg hover:from-emerald-400 hover:to-orange-500 transition-all shadow-lg"
                   >
                     Verify and Enable 2FA
                   </button>
@@ -1596,3 +1700,4 @@ const Profile = () => {
 }
 
 export default Profile
+

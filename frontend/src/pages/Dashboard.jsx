@@ -1,15 +1,11 @@
 import React, { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import gsap from 'gsap'
 import { Link } from 'react-router-dom'
 import {
-  MapIcon,
-  ChatBubbleLeftIcon,
-  ExclamationTriangleIcon,
-  TrophyIcon,
-  BoltIcon,
-  CloudIcon,
-  UserGroupIcon,
-  ChartBarIcon
+  MapIcon, ChatBubbleLeftIcon, ExclamationTriangleIcon, TrophyIcon,
+  BoltIcon, CloudIcon, UserGroupIcon, ChartBarIcon, ClockIcon,
+  MapPinIcon, SunIcon, ShieldCheckIcon, SignalIcon, BeakerIcon,
+  ShoppingBagIcon, ChatBubbleBottomCenterTextIcon, MicrophoneIcon
 } from '@heroicons/react/24/outline'
 import { useAuth } from '../contexts/AuthContext'
 import { useSocket } from '../contexts/SocketContext'
@@ -19,7 +15,9 @@ import {
   createRide,
   updateRide,
   updateUserStatus,
-  updateProfile
+  updateProfile,
+  getRides,
+  getRewards
 } from '../lib/supabaseHelpers'
 import { withTimeout, safeFetch, getLocationWithTimeout } from '../utils/asyncHelpers'
 
@@ -28,6 +26,8 @@ const Dashboard = () => {
   const [weather, setWeather] = useState(null)
   const [nearbyAlerts, setNearbyAlerts] = useState([])
   const [leaderboard, setLeaderboard] = useState([])
+  const [recentActivity, setRecentActivity] = useState([])
+  const [backendOnline, setBackendOnline] = useState(false)
   const [batteryLevel, setBatteryLevel] = useState(null) // initialize as null so we can show a loading state while the battery is checked
   const [isCharging, setIsCharging] = useState(false)
   const [batterySupported, setBatterySupported] = useState(true)
@@ -39,11 +39,39 @@ const Dashboard = () => {
     weather: false,
     alerts: false,
     leaderboard: false,
-    location: false
+    location: false,
+    activity: false
   })
 
   const { user, profile, session } = useAuth()
-  const { socket, connected, onlineUsers } = useSocket()
+  const { socket, onlineUsers } = useSocket()
+
+  useEffect(() => {
+    let mounted = true
+
+    const checkBackendHealth = async () => {
+      try {
+        const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:5001'
+        const healthUrl = `${API_BASE.replace(/\/$/, '')}/api/health`
+        const response = await safeFetch(healthUrl, { headers: { Accept: 'application/json' } }, 5000, 1)
+        const data = await response.json()
+
+        if (mounted) {
+          setBackendOnline(Boolean(response.ok && data?.success))
+        }
+      } catch (error) {
+        if (mounted) setBackendOnline(false)
+      }
+    }
+
+    checkBackendHealth()
+    const interval = setInterval(checkBackendHealth, 30000)
+
+    return () => {
+      mounted = false
+      clearInterval(interval)
+    }
+  }, [])
 
   // Safe loading state helper
   const setLoading = (key, value) => {
@@ -65,7 +93,8 @@ const Dashboard = () => {
           initAlertsSafely(), 
           initLeaderboardSafely(),
           initLocationSafely(),
-          initBatterySafely()
+          initBatterySafely(),
+          initActivitySafely()
         ])
       } catch (error) {
         // Silent fail - dashboard will show loading states
@@ -117,6 +146,17 @@ const Dashboard = () => {
       // Silent fail
     } finally {
       setLoading('location', false)
+    }
+  }
+
+  const initActivitySafely = async () => {
+    setLoading('activity', true)
+    try {
+      await withTimeout(fetchRecentActivity(), 6000, 'activity fetch')
+    } catch (error) {
+      // Silent fail
+    } finally {
+      setLoading('activity', false)
     }
   }
 
@@ -343,6 +383,50 @@ const Dashboard = () => {
     }
   }
 
+  const fetchRecentActivity = async () => {
+    if (!user) return
+    try {
+      // Fetch latest 5 rides and 5 rewards
+      const [rides, rewards] = await Promise.all([
+        getRides(user.id, 5).catch(() => []),
+        getRewards(user.id, 5).catch(() => [])
+      ])
+      
+      const activities = []
+      
+      if (rides && rides.length > 0) {
+        rides.forEach(ride => {
+          activities.push({
+            id: `ride-${ride.id}`,
+            title: 'Ride Completed',
+            description: ride.distance_meters ? `${(ride.distance_meters / 1000).toFixed(1)} km` : 'Location ride recorded',
+            timestamp: new Date(ride.end_time || ride.created_at),
+            type: 'ride'
+          })
+        })
+      }
+      
+      if (rewards && rewards.length > 0) {
+        rewards.forEach(reward => {
+          activities.push({
+            id: `reward-${reward.id}`,
+            title: 'Points Earned',
+            description: `+${reward.points} pts - ${reward.activity_type || 'Activity'}`,
+            timestamp: new Date(reward.created_at),
+            type: 'reward'
+          })
+        })
+      }
+      
+      // Sort by timestamp descending
+      activities.sort((a, b) => b.timestamp - a.timestamp)
+      
+      setRecentActivity(activities.slice(0, 3))
+    } catch (error) {
+      setRecentActivity([])
+    }
+  }
+
   const startRide = async () => {
     if (!currentLocation) {
       alert('Location not available')
@@ -482,380 +566,335 @@ const Dashboard = () => {
     }
   ]
 
+  const containerRef = React.useRef(null);
+
+  React.useLayoutEffect(() => {
+    let ctx = gsap.context(() => {
+      gsap.fromTo(".hero-greeting", 
+        { opacity: 0, y: 20 }, 
+        { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }
+      );
+      
+      gsap.fromTo(".dashboard-section",
+        { opacity: 0, y: 30 },
+        { opacity: 1, y: 0, duration: 0.8, stagger: 0.1, ease: "power3.out", delay: 0.2 }
+      );
+
+      gsap.to(".weather-float", {
+        y: -10, duration: 2, repeat: -1, yoyo: true, ease: "sine.inOut"
+      });
+      
+      if (batteryLevel) {
+        gsap.fromTo(".battery-fill",
+          { width: "0%" },
+          { width: `${batteryLevel}%`, duration: 1.5, ease: "power3.out", delay: 0.8 }
+        );
+      }
+    }, containerRef);
+    return () => ctx.revert();
+  }, [batteryLevel]);
+
   return (
-    <div className="min-h-screen pt-20 px-4">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-12"
-        >
-          <h1 className="text-3xl md:text-4xl font-bold text-alabaster mb-4">
-            Dashboard
-          </h1>
-          <p className="text-xl text-dusty">
-            Welcome back, {profile?.name || user?.user_metadata?.name || 'Rider'}. Monitor your ride status and access safety features.
-          </p>
-        </motion.div>
+    <div ref={containerRef} className="min-h-screen pt-24 pb-16 px-4 md:px-8 text-[#F5F5F7] bg-[#090909] font-sans relative overflow-x-hidden">
+      {/* Background Decorators */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-[#B08968]/5 blur-[120px] rounded-full" />
+        <div className="absolute bottom-0 right-0 w-[600px] h-[600px] bg-[#1a1a1a]/40 blur-[100px] rounded-full" />
+        <div className="absolute inset-0 bg-[url('/noise.png')] opacity-[0.03] mix-blend-overlay" />
+      </div>
 
-        {/* System Status Panel */}
-        <section className="mb-14">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-semibold text-slate-900 dark:text-alabaster">System Status</h2>
-            <span className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Live Panel</span>
+      <div className="max-w-7xl mx-auto relative z-10 flex flex-col gap-10">
+        
+        {/* 1. Premium Greeting */}
+        <section className="hero-greeting flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div>
+            <h1 className="text-3xl md:text-5xl font-semibold tracking-tight text-[#F5F5F7] mb-2">
+              Good Evening, {profile?.name?.split(' ')[0] || user?.user_metadata?.name?.split(' ')[0] || 'Rider'}.
+            </h1>
+            <p className="text-[#86868B] text-base md:text-lg">Everything is ready for your next ride.</p>
           </div>
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl bg-gradient-to-br from-white/95 via-white/85 to-slate-100/80 dark:from-slate-900/85 dark:via-slate-900/75 dark:to-slate-950/80 shadow-[0_28px_70px_-30px_rgba(15,23,42,0.6)] dark:shadow-[0_36px_80px_-38px_rgba(0,0,0,0.95)] p-10 md:p-12"
-          >
-            <div className="flex flex-col gap-8">
-              <div className="flex items-center justify-between">
+          
+          <div className="flex items-center gap-6 bg-[#111111]/80 backdrop-blur-xl border border-white/[0.04] px-6 py-3 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+            <div className="flex items-center gap-2">
+              <ClockIcon className="w-5 h-5 text-[#B08968]" />
+              <span className="text-sm font-medium">{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+            </div>
+            <div className="w-[1px] h-4 bg-white/10" />
+            <div className="flex items-center gap-2">
+              <CloudIcon className="w-5 h-5 text-[#86868B]" />
+              <span className="text-sm font-medium">{weather ? `${weather.current.temperature}°C` : '--'}</span>
+            </div>
+            <div className="w-[1px] h-4 bg-white/10" />
+            <div className="flex items-center gap-2">
+              <MapPinIcon className="w-5 h-5 text-[#86868B]" />
+              <span className="text-sm font-medium">{currentLocation ? 'Location Active' : 'Locating...'}</span>
+            </div>
+          </div>
+        </section>
+
+        {/* 2. Main Cockpit (Hero Card) */}
+        <section className="dashboard-section relative rounded-[32px] bg-[#111111]/90 backdrop-blur-3xl border border-white/[0.05] shadow-[0_24px_48px_rgba(0,0,0,0.6)] overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
+          
+          <div className="p-8 md:p-12 grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-6">
+            
+            {/* Left: Bike Graphic */}
+            <div className="lg:col-span-4 flex items-center justify-center relative">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(176,137,104,0.1),transparent_70%)] blur-2xl" />
+              {/* Premium Bike Silhouette placeholder */}
+              <div className="relative w-full aspect-square max-w-[300px]">
+                <img src="https://images.unsplash.com/photo-1558981806-ec527fa84c39?q=80&w=800&auto=format&fit=crop" className="w-full h-full object-cover rounded-full opacity-40 mix-blend-screen mask-image-radial filter grayscale contrast-150" alt="Motorcycle" style={{ WebkitMaskImage: 'radial-gradient(circle, black 40%, transparent 70%)' }} />
+              </div>
+            </div>
+
+            {/* Center: Ride Status */}
+            <div className="lg:col-span-5 flex flex-col justify-center gap-8">
+              <div className="flex items-center gap-4">
+                <div className={`w-3 h-3 rounded-full shadow-[0_0_12px_rgba(0,0,0,0.5)] ${backendOnline ? 'bg-green-500 shadow-green-500/50' : 'bg-red-500 shadow-red-500/50'}`} />
+                <span className="text-sm uppercase tracking-widest text-[#86868B] font-medium">{backendOnline ? 'System Connected' : 'System Offline'}</span>
+              </div>
+              
+              <div>
+                <h2 className="text-5xl font-semibold tracking-tight text-[#F5F5F7] mb-2">{isRiding ? 'Ride Active' : 'Ready to Ride'}</h2>
+                <p className="text-[#86868B] text-lg">{onlineUsers.length} riders currently active on the network.</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">System</p>
-                  <p className="text-4xl md:text-5xl font-bold text-slate-900 dark:text-alabaster">
-                    {connected ? 'Connected' : 'Offline'}
-                  </p>
-                  <p className="text-sm text-slate-600 dark:text-dusty">
-                    {onlineUsers.length} active riders • {isRiding ? 'Ride active' : 'Ride idle'}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-                  <span className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Live</span>
-                </div>
-              </div>
-
-              <div className="grid md:grid-cols-4 gap-6">
-                <div className="md:col-span-2 grid grid-cols-2 gap-6">
-                  <div className="pr-4 border-r border-slate-200/80 dark:border-white/10">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Network</p>
-                    <p className="text-3xl font-bold text-slate-900 dark:text-alabaster">
-                      {connected ? 'Stable' : 'Degraded'}
-                    </p>
-                    <p className="text-sm text-slate-600 dark:text-dusty">Latency within range</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Ride Status</p>
-                    <p className="text-3xl font-bold text-accent">{isRiding ? 'Riding' : 'Parked'}</p>
-                    <button
-                      onClick={isRiding ? endRide : startRide}
-                      className={`text-xs mt-2 px-4 py-1.5 rounded-full transition-colors ${isRiding
-                        ? 'bg-red-600 hover:bg-red-700 text-white'
-                        : 'bg-green-600 hover:bg-green-700 text-white'
-                        }`}
-                    >
-                      {isRiding ? 'End Ride' : 'Start Ride'}
-                    </button>
+                  <p className="text-xs uppercase tracking-widest text-[#86868B] mb-2">Battery</p>
+                  <p className="text-2xl font-medium text-[#F5F5F7] mb-2">{batterySupported && batteryLevel !== null ? `${batteryLevel}%` : '--'}</p>
+                  <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                    <div className="battery-fill h-full bg-[#B08968] rounded-full" />
                   </div>
                 </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Battery</p>
-                    {batteryLevel !== null && batterySupported ? (
-                      <>
-                        <p className="text-3xl font-bold text-accent">
-                          {batteryLevel}% {isCharging && <span className="text-sm text-green-400">(Charging)</span>}
-                        </p>
-                        <div className="w-full bg-slate-200/70 dark:bg-dusk rounded-full h-2 mt-2">
-                          <div
-                            className={`h-2 rounded-full transition-all duration-300 ${batteryLevel > 50 ? 'bg-green-500' : batteryLevel > 20 ? 'bg-yellow-500' : 'bg-red-500'
-                              }`}
-                            style={{ width: `${batteryLevel}%` }}
-                          />
-                        </div>
-                        {batteryLevel <= 20 && (
-                          <button
-                            onClick={sendBatteryAlert}
-                            className="text-xs text-red-500 hover:text-red-600 mt-2"
-                          >
-                            Send Low Battery Alert
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-sm text-slate-600 dark:text-dusty">Battery status unavailable</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Weather</p>
-                    {weather ? (
-                      <>
-                        <p className="text-3xl font-bold text-accent">{weather.current.temperature}°C</p>
-                        <p className="text-sm text-slate-600 dark:text-dusty capitalize">{weather.current.description}</p>
-                        <p className={`text-xs ${weather.rideConditions.isGoodForRiding ? 'text-green-500' : 'text-red-500'}`}>
-                          {weather.rideConditions.isGoodForRiding ? 'Good for riding' : 'Poor conditions'}
-                        </p>
-                      </>
-                    ) : (
-                      <p className="text-sm text-slate-600 dark:text-dusty">Loading...</p>
-                    )}
-                  </div>
+                <div>
+                  <p className="text-xs uppercase tracking-widest text-[#86868B] mb-2">Today's Distance</p>
+                  <p className="text-2xl font-medium text-[#F5F5F7]">{stats?.totalDistance ? `${Math.round(Number(stats.totalDistance))} km` : '0 km'}</p>
                 </div>
               </div>
             </div>
-          </motion.div>
+
+            {/* Right: CTAs & Status Indicators */}
+            <div className="lg:col-span-3 flex flex-col justify-between gap-8 border-l border-white/5 pl-0 lg:pl-8">
+              <div className="flex flex-col gap-4">
+                <button onClick={isRiding ? endRide : startRide} className={`w-full py-4 rounded-2xl font-medium text-[15px] transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] shadow-lg ${isRiding ? 'bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20' : 'bg-[#B08968] text-black hover:bg-[#c29875] shadow-[#B08968]/20'}`}>
+                  {isRiding ? 'End Current Ride' : 'Start Ride'}
+                </button>
+                <Link to="/map" className="w-full py-4 rounded-2xl font-medium text-[15px] text-center bg-white/[0.03] text-[#F5F5F7] border border-white/[0.05] transition-all duration-300 hover:bg-white/[0.06] hover:scale-[1.02] active:scale-[0.98]">
+                  Open Navigation
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { label: 'GPS', active: Boolean(currentLocation) },
+                  { label: 'NET', active: backendOnline },
+                  { label: 'BLU', active: true },
+                  { label: 'SOS', active: true, color: 'text-red-400' }
+                ].map(indicator => (
+                  <div key={indicator.label} className="flex flex-col items-center gap-1.5">
+                    <div className={`w-1.5 h-1.5 rounded-full ${indicator.active ? (indicator.color ? 'bg-red-500' : 'bg-green-500') : 'bg-white/20'}`} />
+                    <span className="text-[10px] uppercase tracking-widest text-[#86868B]">{indicator.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+          </div>
         </section>
 
-        {/* Status & Context Section */}
-        <section className="mb-12">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-alabaster">Context & Intelligence</h2>
-            <span className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Secondary systems</span>
+        {/* 3. Context & Intelligence */}
+        <section className="dashboard-section grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left: Weather */}
+          <div className="lg:col-span-4 rounded-[28px] bg-[#111111]/80 backdrop-blur-xl border border-white/[0.05] p-8 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-[#B08968]/10 blur-3xl rounded-full" />
+            
+            <div className="flex justify-between items-start mb-8">
+              <span className="text-xs uppercase tracking-widest text-[#86868B]">Weather Conditions</span>
+              <span className={`text-[10px] uppercase tracking-widest px-3 py-1 rounded-full border ${weather?.rideConditions?.isGoodForRiding ? 'text-green-400 border-green-400/30 bg-green-400/10' : 'text-red-400 border-red-400/30 bg-red-400/10'}`}>
+                {weather?.rideConditions?.isGoodForRiding ? 'Optimal' : 'Caution'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-6 mb-8">
+              <div className="weather-float">
+                <SunIcon className="w-16 h-16 text-[#B08968]" />
+              </div>
+              <div>
+                <p className="text-5xl font-medium tracking-tighter text-[#F5F5F7]">{weather ? `${weather.current.temperature}°C` : '--'}</p>
+                <p className="text-[#86868B] capitalize text-sm mt-1">{weather ? weather.current.description : 'Loading...'}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-y-6 gap-x-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-[#86868B] mb-1">Wind</p>
+                <p className="text-sm font-medium">{weather ? `${Math.round(weather.current.windSpeed)} m/s` : '--'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-[#86868B] mb-1">Humidity</p>
+                <p className="text-sm font-medium">{weather?.current?.humidity ?? '--'}%</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-[#86868B] mb-1">Visibility</p>
+                <p className="text-sm font-medium">{weather?.current?.visibility ?? '--'} km</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-[#86868B] mb-1">AQI</p>
+                <p className="text-sm font-medium">Good</p>
+              </div>
+            </div>
           </div>
-          <div className="grid lg:grid-cols-3 gap-6">
-            {/* Weather */}
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-50/80 via-white/60 to-slate-100/70 dark:from-slate-900/70 dark:via-slate-900/50 dark:to-slate-950/70 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.35)] dark:shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)] p-5"
-            >
-              <div className="absolute inset-x-0 top-0 h-24 pointer-events-none">
-                <div className="absolute -top-6 left-6 h-24 w-24 rounded-full bg-slate-300/30 dark:bg-slate-700/30 blur-2xl" />
-                <div className="absolute -top-4 right-8 h-28 w-28 rounded-full bg-sky-200/25 dark:bg-sky-500/10 blur-3xl" />
-              </div>
 
-              <div className="relative z-10 flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Weather</p>
-                  <span className={`text-[10px] px-2.5 py-1 rounded-full border ${weather?.rideConditions?.isGoodForRiding ? 'text-green-600 border-green-200/70 bg-green-50/70 dark:text-green-300 dark:border-green-500/30 dark:bg-green-500/10' : 'text-red-600 border-red-200/70 bg-red-50/70 dark:text-red-300 dark:border-red-500/30 dark:bg-red-500/10'}`}>
-                    {weather?.rideConditions?.isGoodForRiding ? 'Good for riding' : 'Poor conditions'}
-                  </span>
+          {/* Right: Rider Stats */}
+          <div className="lg:col-span-8 rounded-[28px] bg-[#111111]/80 backdrop-blur-xl border border-white/[0.05] p-8 shadow-2xl">
+            <span className="text-xs uppercase tracking-widest text-[#86868B] mb-8 block">Rider Intelligence</span>
+            
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-6 h-full pb-6">
+              {[
+                { label: "Today's KM", value: 0 }, // Would require daily aggregation endpoint
+                { label: 'Total Rides', value: stats?.totalRides || 0 },
+                { label: 'Total KM', value: stats?.totalDistance ? Math.round(Number(stats.totalDistance)) : 0 },
+                { label: 'Hours Ridden', value: 0 }, // Would require daily aggregation endpoint
+                { label: 'Emergency Assists', value: stats?.helpGiven || 0 },
+                { label: 'Reward Points', value: stats?.rewardPoints || 0, highlight: true }
+              ].map((stat, i) => (
+                <div key={i} className="flex flex-col justify-center p-4 rounded-2xl bg-white/[0.02] border border-white/[0.02]">
+                  <p className="text-[10px] uppercase tracking-widest text-[#86868B] mb-2">{stat.label}</p>
+                  <p className={`text-3xl font-semibold tracking-tight ${stat.highlight ? 'text-[#B08968]' : 'text-[#F5F5F7]'}`}>{stat.value}</p>
                 </div>
-
-                <div className="relative flex flex-col items-center text-center">
-                  <CloudIcon className="absolute -top-2 h-24 w-24 text-slate-400/20 dark:text-slate-600/20" />
-                  {weather ? (
-                    <>
-                      <p className="text-4xl font-semibold text-slate-900 dark:text-alabaster">
-                        {weather.current.temperature}°C
-                      </p>
-                      <p className="text-sm text-slate-600 dark:text-dusty capitalize mt-1">
-                        {weather.current.description}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-slate-600 dark:text-dusty">Loading...</p>
-                  )}
-                </div>
-
-                {weather && (
-                  <div className="grid grid-cols-3 gap-3 text-[11px] text-slate-600 dark:text-dusty">
-                    <div className="flex flex-col items-center">
-                      <BoltIcon className="w-4 h-4 text-slate-400 dark:text-slate-500" />
-                      <span className="uppercase tracking-[0.2em] text-[10px] text-slate-500 dark:text-dusty mt-1">Wind</span>
-                      <span className="font-semibold text-slate-800 dark:text-alabaster">{Math.round(weather.current.windSpeed || 0)} m/s</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <CloudIcon className="w-4 h-4 text-slate-400 dark:text-slate-500" />
-                      <span className="uppercase tracking-[0.2em] text-[10px] text-slate-500 dark:text-dusty mt-1">Humidity</span>
-                      <span className="font-semibold text-slate-800 dark:text-alabaster">{weather.current.humidity ?? 0}%</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <MapIcon className="w-4 h-4 text-slate-400 dark:text-slate-500" />
-                      <span className="uppercase tracking-[0.2em] text-[10px] text-slate-500 dark:text-dusty mt-1">Visibility</span>
-                      <span className="font-semibold text-slate-800 dark:text-alabaster">{weather.current.visibility ?? 0} km</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-
-            <div className="lg:col-span-2 space-y-6">
-              {/* Rider Stats */}
-              <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                className="rounded-2xl bg-white/70 dark:bg-slate-900/55 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.35)] dark:shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)] p-5"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Rider Stats</p>
-                  <ChartBarIcon className="w-5 h-5 text-slate-500 dark:text-dusty" />
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="rounded-xl bg-white/80 dark:bg-slate-900/60 shadow-sm p-4 text-center">
-                    <ChartBarIcon className="w-7 h-7 text-accent mx-auto mb-3" />
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-alabaster">{stats?.totalRides || 0}</p>
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Total Rides</p>
-                  </div>
-                  <div className="rounded-xl bg-white/80 dark:bg-slate-900/60 shadow-sm p-4 text-center">
-                    <MapIcon className="w-7 h-7 text-slate-500 dark:text-dusty mx-auto mb-3" />
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-alabaster">
-                      {stats?.totalDistance ? `${(stats.totalDistance / 1000).toFixed(0)}` : '0'}
-                    </p>
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Total KM</p>
-                  </div>
-                  <div className="rounded-xl bg-white/80 dark:bg-slate-900/60 shadow-sm p-4 text-center">
-                    <UserGroupIcon className="w-7 h-7 text-green-500 mx-auto mb-3" />
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-alabaster">{stats?.helpCount || 0}</p>
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">People Helped</p>
-                  </div>
-                  <div className="rounded-xl bg-white/80 dark:bg-slate-900/60 shadow-sm p-4 text-center">
-                    <TrophyIcon className="w-7 h-7 text-yellow-500 mx-auto mb-3" />
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-alabaster">{stats?.rewardPoints || 0}</p>
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Reward Points</p>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* Leaderboard */}
-              <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="rounded-2xl bg-white/70 dark:bg-slate-900/55 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.35)] dark:shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)] p-5"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Top Riders</p>
-                  <UserGroupIcon className="w-5 h-5 text-slate-500 dark:text-dusty" />
-                </div>
-                {leaderboard.length > 0 ? (
-                  <div className="space-y-3">
-                    {leaderboard.map((rider, index) => (
-                      <div key={rider.user._id} className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${index === 0 ? 'bg-yellow-500 text-black' :
-                            index === 1 ? 'bg-gray-300 text-black' :
-                              index === 2 ? 'bg-orange-600 text-white' :
-                                'bg-slate-200/80 text-slate-600 dark:bg-dusk dark:text-dusty'
-                            }`}>
-                            {index + 1}
-                          </div>
-                          <span className="text-slate-900 dark:text-alabaster text-sm">{rider.user.name}</span>
-                        </div>
-                        <span className="text-accent text-sm font-semibold">
-                          {rider.score} pts
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-slate-600 dark:text-dusty text-center">No leaderboard data</p>
-                )}
-              </motion.div>
-
-              {/* Recent Alerts */}
-              {nearbyAlerts.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 }}
-                  className="rounded-2xl bg-white/70 dark:bg-slate-900/55 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.35)] dark:shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)] p-5"
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Nearby Alerts</p>
-                    <ExclamationTriangleIcon className="w-5 h-5 text-slate-500 dark:text-dusty" />
-                  </div>
-                  <div className="space-y-4">
-                    {nearbyAlerts.slice(0, 3).map((alert) => (
-                      <div key={alert.id} className="rounded-xl bg-white/85 dark:bg-slate-900/70 shadow-sm p-4">
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="flex items-start space-x-4">
-                            <div className="text-2xl">
-                              {alert.type === 'accident' ? '🚨' :
-                                alert.type === 'breakdown' ? '🛠️' :
-                                  alert.type === 'medical' ? '🏥' : '⚠️'}
-                            </div>
-                            <div>
-                              <h4 className="text-slate-900 dark:text-alabaster font-semibold capitalize">
-                                {alert.type} Alert
-                              </h4>
-                              {(() => {
-                                let d = typeof alert.distance === 'number' ? alert.distance : null
-
-                                if (d === null && alert.location && Array.isArray(alert.location.coordinates) && alert.location.coordinates.length === 2 && currentLocation) {
-                                  // server may store [longitude, latitude]
-                                  d = calculateDistance(
-                                    currentLocation.latitude,
-                                    currentLocation.longitude,
-                                    alert.location.coordinates[1],
-                                    alert.location.coordinates[0]
-                                  )
-                                }
-
-                                const distanceText = Number.isFinite(d)
-                                  ? `${Math.round(d)}m away • ${alert.respondersCount || 0} responses`
-                                  : `${alert.respondersCount || 0} responses`
-
-                                return <p className="text-xs text-slate-600 dark:text-dusty">{distanceText}</p>
-                              })()}
-                              {alert.description && (
-                                <p className="text-sm text-slate-600 dark:text-dusty mt-1">
-                                  {alert.description}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <Link
-                            to={`/emergency`}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-full transition-colors"
-                          >
-                            Respond
-                          </Link>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
+              ))}
             </div>
           </div>
         </section>
 
-
-        {/* Quick Actions */}
-        <section className="mb-10">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-alabaster">Command Actions</h2>
-            <span className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-dusty">Command bar</span>
+        {/* 4. Live Map Preview */}
+        <section className="dashboard-section rounded-[28px] bg-[#111111]/80 backdrop-blur-xl border border-white/[0.05] p-2 shadow-2xl relative h-[280px] overflow-hidden group">
+          <div className="absolute inset-0 bg-[#090909] opacity-80 z-10" />
+          <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=1200&auto=format&fit=crop')] bg-cover bg-center opacity-30 grayscale filter mix-blend-overlay z-0" />
+          
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center">
+             <div className="w-16 h-16 rounded-full bg-[#B08968]/20 flex items-center justify-center mb-4 border border-[#B08968]/30">
+               <MapPinIcon className="w-6 h-6 text-[#B08968]" />
+             </div>
+             <h3 className="text-xl font-medium text-white mb-6">Live Network Map</h3>
+             <Link to="/map" className="px-6 py-2.5 rounded-full bg-white text-black text-sm font-medium hover:scale-105 transition-transform duration-300">
+               Open Full Map
+             </Link>
           </div>
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
-            className="rounded-2xl bg-white/70 dark:bg-slate-900/55 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.35)] dark:shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)] p-5"
-          >
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {quickFeatures.map((feature) => {
-                const Icon = feature.icon
-                const isEmergency = feature.title === 'Emergency Alert'
-                return (
-                  <Link
-                    key={feature.title}
-                    to={feature.link}
-                    className="group"
-                  >
-                    <motion.div
-                      whileHover={{ y: -4 }}
-                      whileTap={{ scale: 0.98 }}
-                      className={`rounded-xl transition-all h-full cursor-pointer p-4 flex flex-col items-start text-left ${isEmergency
-                          ? 'bg-red-50/80 dark:bg-red-950/30 shadow-[0_12px_26px_-16px_rgba(220,38,38,0.6)] ring-1 ring-red-200/80 dark:ring-red-500/40'
-                          : 'bg-white/70 dark:bg-slate-900/60 shadow-sm'
-                        }`}
-                    >
-                      <div className={`text-${feature.color} mb-3`}>
-                        <Icon className="w-8 h-8" />
-                      </div>
-                      <h3 className={`text-sm font-semibold ${isEmergency ? 'text-red-700 dark:text-red-300' : 'text-slate-900 dark:text-alabaster'}`}>
-                        {feature.title}
-                      </h3>
-                      <p className="text-[11px] text-slate-600 dark:text-dusty mt-1">
-                        {feature.description}
-                      </p>
-                    </motion.div>
-                  </Link>
-                )
-              })}
-            </div>
-          </motion.div>
         </section>
+
+        {/* 5. Nearby Alerts & 6. Community */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Nearby Alerts */}
+          <section className="dashboard-section rounded-[28px] bg-[#111111]/80 backdrop-blur-xl border border-white/[0.05] p-8 shadow-2xl">
+            <span className="text-xs uppercase tracking-widest text-[#86868B] mb-6 block">Nearby Alerts</span>
+            
+            {nearbyAlerts.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                {nearbyAlerts.slice(0, 4).map(alert => (
+                  <div key={alert.id} className="group flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/[0.03] hover:bg-white/[0.04] transition-colors">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${alert.type === 'accident' ? 'bg-red-500/10 text-red-500' : 'bg-orange-500/10 text-orange-500'}`}>
+                        <ExclamationTriangleIcon className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-[#F5F5F7] capitalize">{alert.type} Alert</p>
+                        <p className="text-xs text-[#86868B]">{alert.distance ? `${Math.round(alert.distance)}m away` : 'Nearby'} • Just now</p>
+                      </div>
+                    </div>
+                    <Link to="/emergency" className="px-4 py-2 rounded-full bg-white/5 text-xs font-medium text-[#F5F5F7] hover:bg-[#B08968] hover:text-black transition-colors opacity-0 group-hover:opacity-100">
+                      Respond
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="h-40 flex flex-col items-center justify-center text-center opacity-50">
+                <ShieldCheckIcon className="w-8 h-8 text-[#86868B] mb-3" />
+                <p className="text-sm text-[#F5F5F7]">No active alerts.</p>
+                <p className="text-xs text-[#86868B]">The network is safe.</p>
+              </div>
+            )}
+          </section>
+
+          {/* Community Leaderboard */}
+          <section className="dashboard-section rounded-[28px] bg-[#111111]/80 backdrop-blur-xl border border-white/[0.05] p-8 shadow-2xl">
+            <span className="text-xs uppercase tracking-widest text-[#86868B] mb-6 block">Community Leaders</span>
+            
+            {leaderboard.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                {leaderboard.map((rider, index) => (
+                  <div key={rider.user._id} className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/[0.03]">
+                    <div className="flex items-center gap-4">
+                      <div className="text-sm font-mono text-[#86868B] w-4">{index + 1}</div>
+                      <div className="w-8 h-8 rounded-full bg-white/10" />
+                      <p className="text-sm font-medium text-[#F5F5F7]">{rider.user.name}</p>
+                    </div>
+                    <span className="text-sm font-medium text-[#B08968]">{rider.score} pts</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="h-40 flex flex-col items-center justify-center text-center opacity-50">
+                <UserGroupIcon className="w-8 h-8 text-[#86868B] mb-3" />
+                <p className="text-sm text-[#F5F5F7]">Leaderboard syncing.</p>
+              </div>
+            )}
+          </section>
+        </div>
+
+        {/* 7. Quick Actions */}
+        <section className="dashboard-section mt-4">
+           <span className="text-xs uppercase tracking-widest text-[#86868B] mb-6 block">Command Actions</span>
+           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+             {quickFeatures.map(feature => (
+               <Link key={feature.title} to={feature.link} className="group relative aspect-square flex flex-col justify-end p-6 rounded-3xl bg-[#111111]/80 backdrop-blur-xl border border-white/[0.05] shadow-lg hover:-translate-y-1 hover:border-[#B08968]/30 transition-all duration-300">
+                  <div className="absolute top-6 left-6">
+                    <feature.icon className={`w-6 h-6 ${feature.title === 'Emergency Alert' ? 'text-red-500' : 'text-[#B08968]'}`} />
+                  </div>
+                  <h4 className="text-sm font-medium text-[#F5F5F7] leading-tight">{feature.title}</h4>
+               </Link>
+             ))}
+             
+             <button className="group relative aspect-square flex flex-col justify-end p-6 rounded-3xl bg-[#111111]/80 backdrop-blur-xl border border-white/[0.05] shadow-lg hover:-translate-y-1 hover:border-[#B08968]/30 transition-all duration-300">
+                <div className="absolute top-6 left-6">
+                  <ShoppingBagIcon className="w-6 h-6 text-[#B08968]" />
+                </div>
+                <h4 className="text-sm font-medium text-[#F5F5F7] leading-tight">Marketplace</h4>
+             </button>
+
+             <button className="group relative aspect-square flex flex-col justify-end p-6 rounded-3xl bg-[#111111]/80 backdrop-blur-xl border border-white/[0.05] shadow-lg hover:-translate-y-1 hover:border-[#B08968]/30 transition-all duration-300">
+                <div className="absolute top-6 left-6">
+                  <MicrophoneIcon className="w-6 h-6 text-[#B08968]" />
+                </div>
+                <h4 className="text-sm font-medium text-[#F5F5F7] leading-tight">Voice Assist</h4>
+             </button>
+           </div>
+        </section>
+
+        {/* 8. Recent Activity */}
+        <section className="dashboard-section rounded-[28px] bg-[#111111]/80 backdrop-blur-xl border border-white/[0.05] p-8 shadow-2xl mt-4">
+           <span className="text-xs uppercase tracking-widest text-[#86868B] mb-8 block">Recent Activity</span>
+           
+           <div className="flex flex-col gap-6 pl-2">
+             {recentActivity && recentActivity.length > 0 ? (
+               recentActivity.map((activity, index) => (
+                 <div key={activity.id} className={`relative pl-6 ${index !== recentActivity.length - 1 ? 'border-l border-[#B08968]/30' : 'border-l border-transparent'}`}>
+                   <div className={`absolute w-2 h-2 rounded-full ${index === 0 ? 'bg-[#B08968] -left-[4.5px] top-1 shadow-[0_0_10px_rgba(176,137,104,0.5)] w-2.5 h-2.5' : 'bg-white/20 -left-1 top-1'}`} />
+                   <p className="text-sm font-medium text-[#F5F5F7]">{activity.title}</p>
+                   <p className="text-xs text-[#86868B] mt-1">{activity.timestamp.toLocaleDateString()} • {activity.description}</p>
+                 </div>
+               ))
+             ) : (
+               <div className="text-center py-6">
+                 <p className="text-sm text-[#86868B]">No recent activity found.</p>
+               </div>
+             )}
+           </div>
+        </section>
+
+
       </div>
     </div>
   )

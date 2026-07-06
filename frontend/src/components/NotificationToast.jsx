@@ -13,7 +13,7 @@ const NotificationToast = ({ notification, onClose, onClick }) => {
   const getIcon = () => {
     switch (notification.type) {
       case 'message':
-        return <ChatBubbleLeftIcon className="w-6 h-6 text-blue-400" />
+        return <ChatBubbleLeftIcon className="w-6 h-6 text-orange-400" />
       case 'emergency':
         return <ExclamationTriangleIcon className="w-6 h-6 text-red-400" />
       case 'resolved':
@@ -102,3 +102,4 @@ const NotificationToast = ({ notification, onClose, onClick }) => {
 }
 
 export default NotificationToast
+

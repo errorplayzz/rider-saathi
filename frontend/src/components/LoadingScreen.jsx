@@ -26,7 +26,7 @@ const LoadingScreen = () => {
       className="fixed inset-0 bg-dark-900 flex items-center justify-center z-50"
     >
       {/* Background Animation */}
-      <div className="absolute inset-0 bg-gradient-to-br from-dark-900 via-purple-900/20 to-cyan-900/20" />
+      <div className="absolute inset-0 bg-gradient-to-br from-dark-900 via-orange-900/20 to-orange-900/20" />
       
       {/* Animated Background Circles */}
       <div className="absolute inset-0 overflow-hidden">

@@ -14,7 +14,8 @@ import {
   SunIcon,
   MoonIcon,
   ArrowRightOnRectangleIcon,
-  DocumentTextIcon
+  DocumentTextIcon,
+  ShoppingBagIcon
 } from '@heroicons/react/24/outline'
 import NotificationDropdown from './NotificationDropdown'
 import { useTheme } from '../contexts/ThemeContext'
@@ -30,8 +31,6 @@ const Navbar = () => {
   
   const { scrollY } = useScroll()
   const navbarY = useTransform(scrollY, [0, 100], [0, -5])
-  const navbarBlur = useTransform(scrollY, [0, 100], [8, 20])
-  const navbarOpacity = useTransform(scrollY, [0, 100], [0.7, 0.95])
 
   useEffect(() => {
     const handleScroll = () => {
@@ -52,6 +51,7 @@ const Navbar = () => {
     { name: 'Map', path: '/map', icon: MapIcon },
     { name: 'Emergency', path: '/emergency', icon: ExclamationTriangleIcon },
     { name: 'Chat', path: '/chat', icon: ChatBubbleLeftIcon },
+    { name: 'Marketplace', path: '/marketplace', icon: ShoppingBagIcon },
     { name: 'Blogs', path: '/blogs', icon: DocumentTextIcon },
     { name: 'Profile', path: '/profile', icon: UserIcon },
   ]
@@ -66,327 +66,118 @@ const Navbar = () => {
 
   return (
     <>
-      {/* Animated Background Glow */}
-      <motion.div
-        className="fixed top-0 left-0 right-0 h-1 z-[99]"
-        style={{
-          background: 'linear-gradient(90deg, #06b6d4, #3b82f6, #8b5cf6, #06b6d4)',
-          backgroundSize: '200% 100%',
-          opacity: scrolled ? 0.6 : 0,
-        }}
-        animate={{
-          backgroundPosition: ['0% 0%', '200% 0%'],
-        }}
-        transition={{
-          duration: 3,
-          repeat: Infinity,
-          ease: 'linear',
-        }}
-      />
-
-      <motion.nav
-        initial={{ y: -100, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        style={{
-          y: navbarY,
-        }}
-        className={`fixed top-0 left-0 right-0 z-[100] transition-all duration-500 ${
+      <nav
+        className={`fixed z-[100] left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-7xl transition-all duration-500 ease-[cubic-bezier(.22,1,.36,1)] rounded-[26px] ${
           scrolled 
-            ? 'shadow-2xl shadow-cyan-500/10' 
-            : ''
+            ? 'top-[12px] bg-[rgba(18,18,18,0.88)] backdrop-blur-[32px] shadow-[0_12px_40px_rgba(0,0,0,0.5)] border-[rgba(255,255,255,0.08)]' 
+            : 'top-[18px] bg-[rgba(18,18,18,0.72)] backdrop-blur-[24px] shadow-[0_4px_20px_rgba(0,0,0,0.2)] border-[rgba(255,255,255,0.06)]'
         }`}
+        style={{
+          borderWidth: '1px',
+          borderStyle: 'solid'
+        }}
       >
-        {/* Glass Morphism Container with Border Gradient */}
-        <div 
-          className="relative"
-          style={{
-            background: scrolled 
-              ? (isDark 
-                  ? 'linear-gradient(135deg, rgba(15, 23, 42, 0.85) 0%, rgba(30, 41, 59, 0.75) 100%)' 
-                  : 'linear-gradient(135deg, rgba(255, 255, 255, 0.85) 0%, rgba(248, 250, 252, 0.75) 100%)')
-              : (isDark 
-                  ? 'rgba(15, 23, 42, 0.4)' 
-                  : 'rgba(255, 255, 255, 0.4)'),
-            backdropFilter: `blur(${scrolled ? '24px' : '12px'})`,
-            WebkitBackdropFilter: `blur(${scrolled ? '24px' : '12px'})`,
-            borderBottom: scrolled 
-              ? `1px solid ${isDark ? 'rgba(148, 163, 184, 0.12)' : 'rgba(15, 23, 42, 0.08)'}` 
-              : 'none',
-          }}
-        >
-          {/* Animated Border Gradient */}
-          {scrolled && (
-            <motion.div
-              className="absolute inset-0 rounded-b-2xl"
-              style={{
-                background: 'linear-gradient(90deg, transparent, rgba(6, 182, 212, 0.2), rgba(59, 130, 246, 0.2), transparent)',
-                backgroundSize: '200% 100%',
-              }}
-              animate={{
-                backgroundPosition: ['0% 0%', '200% 0%'],
-              }}
-              transition={{
-                duration: 4,
-                repeat: Infinity,
-                ease: 'linear',
-              }}
-            />
-          )}
-
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="flex items-center justify-between h-20">{/* Logo */}
-              <Link to="/" className="flex items-center space-x-3 group relative">
-                <motion.div
-                  whileHover={{ scale: 1.1, rotate: 5 }}
-                  whileTap={{ scale: 0.95 }}
-                  transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-                  className="relative w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center"
-                >
-                  {/* Glow Effect on Logo */}
-                  <motion.div
-                    className="absolute inset-0 rounded-xl"
-                    style={{
-                      background: 'radial-gradient(circle, rgba(6, 182, 212, 0.4) 0%, transparent 70%)',
-                      opacity: 0,
-                    }}
-                    whileHover={{ opacity: 1, scale: 1.2 }}
-                    transition={{ duration: 0.3 }}
-                  />
-                  <img 
-                    src={logo} 
-                    alt="Rider Saathi" 
-                    className="w-full h-full object-cover relative z-10 rounded-xl ring-2 ring-cyan-500/20 group-hover:ring-cyan-500/50 transition-all duration-300" 
-                  />
-                </motion.div>
-                <motion.span 
-                  className="font-bold text-xl bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-500 bg-clip-text text-transparent"
-                  whileHover={{ scale: 1.05 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  Rider Saathi
-                </motion.span>
-                
-                {/* Underline Animation on Logo Hover */}
-                <motion.div
-                  className="absolute -bottom-1 left-0 h-0.5 bg-gradient-to-r from-cyan-500 to-blue-500"
-                  initial={{ width: 0 }}
-                  whileHover={{ width: '100%' }}
-                  transition={{ duration: 0.3 }}
+        <div className="px-6 sm:px-8">
+          <div className="flex items-center justify-between h-[74px]">
+            {/* Logo */}
+            <Link to="/" className="flex items-center space-x-3 group">
+              <div className="relative w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center transition-transform duration-300 group-hover:scale-105">
+                <img 
+                  src={logo} 
+                  alt="Rider Saathi" 
+                  className="w-full h-full object-cover relative z-10 rounded-xl ring-1 ring-white/10 group-hover:ring-white/20 transition-all duration-300" 
                 />
-              </Link>
+              </div>
+              <span className="font-medium text-lg text-white tracking-wide transition-all duration-300 group-hover:text-[#B08968]">
+                Rider Saathi
+              </span>
+            </Link>
 
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-2">
-            <div className="flex items-center space-x-1 px-2 py-1.5 rounded-2xl" style={{
-              background: isDark 
-                ? 'rgba(30, 41, 59, 0.5)' 
-                : 'rgba(241, 245, 249, 0.6)',
-              border: `1px solid ${isDark ? 'rgba(148, 163, 184, 0.1)' : 'rgba(15, 23, 42, 0.05)'}`,
-            }}>
-              {navItems.map((item, index) => {
+            {/* Desktop Navigation */}
+            <div className="hidden md:flex items-center space-x-1">
+              {navItems.map((item) => {
                 const Icon = item.icon
                 const isActive = location.pathname === item.path
-                const isHovered = hoveredItem === item.name
 
                 return (
                   <Link
                     key={item.name}
                     to={item.path}
-                    className="relative"
-                    onMouseEnter={() => setHoveredItem(item.name)}
-                    onMouseLeave={() => setHoveredItem(null)}
+                    className="relative group px-4 py-2.5 rounded-full flex items-center space-x-2 transition-all duration-300 ease-[cubic-bezier(.22,1,.36,1)] hover:-translate-y-[2px] hover:scale-[1.03]"
+                    style={{
+                      color: isActive ? '#ffffff' : 'rgba(255,255,255,0.72)',
+                    }}
                   >
-                    <motion.div
-                      initial={false}
-                      animate={{
-                        scale: isHovered ? 1.05 : 1,
-                        y: isHovered ? -2 : 0,
-                      }}
-                      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                      className="relative flex items-center space-x-2 px-4 py-2.5 rounded-xl transition-all duration-300 overflow-hidden group"
-                      style={{
-                        color: isActive 
-                          ? (isDark ? '#06b6d4' : '#0891b2')
-                          : (isDark ? '#94a3b8' : '#64748b'),
-                      }}
-                    >
-                      {/* Active Background with Gradient */}
-                      {isActive && (
-                        <motion.div
-                          layoutId="navBackground"
-                          className="absolute inset-0 rounded-xl"
-                          style={{
-                            background: isDark
-                              ? 'linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(59, 130, 246, 0.1) 100%)'
-                              : 'linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)',
-                            boxShadow: '0 0 20px rgba(6, 182, 212, 0.2)',
-                          }}
-                          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                        />
-                      )}
+                    {/* Active Background Pill */}
+                    <div className={`absolute inset-0 rounded-full transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-0'}`}
+                         style={{ 
+                           background: 'rgba(255,255,255,0.03)',
+                           boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.05)'
+                         }} />
+                         
+                    {/* Icon with hover shift & glow */}
+                    <div className="relative z-10 transition-transform duration-300 group-hover:-translate-y-[1px]">
+                      <Icon className={`w-5 h-5 transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-70 group-hover:opacity-100'}`} />
+                      {/* Bronze highlight behind icon on hover */}
+                      <div className="absolute inset-0 bg-[#B08968] blur-[8px] rounded-full opacity-0 group-hover:opacity-20 transition-opacity duration-300" />
+                    </div>
 
-                      {/* Hover Glow Effect */}
-                      {isHovered && !isActive && (
-                        <motion.div
-                          className="absolute inset-0 rounded-xl"
-                          style={{
-                            background: isDark
-                              ? 'rgba(148, 163, 184, 0.08)'
-                              : 'rgba(15, 23, 42, 0.04)',
-                          }}
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.8 }}
-                          transition={{ duration: 0.2 }}
-                        />
-                      )}
+                    {/* Text */}
+                    <span className="font-medium text-sm tracking-wide relative z-10">
+                      {item.name}
+                    </span>
 
-                      {/* Icon with Rotation Animation */}
-                      <motion.div
-                        animate={{
-                          rotate: isHovered ? [0, -10, 10, 0] : 0,
-                        }}
-                        transition={{
-                          duration: 0.5,
-                          ease: 'easeInOut',
-                        }}
-                        className="relative z-10"
-                      >
-                        <Icon className="w-5 h-5" />
-                      </motion.div>
+                    {/* Hover Soft Glow */}
+                    <div className="absolute inset-0 bg-white/5 blur-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
 
-                      {/* Text with Gradient on Active */}
-                      <motion.span 
-                        className={`font-semibold relative z-10 ${
-                          isActive ? 'bg-gradient-to-r from-cyan-500 to-blue-500 bg-clip-text text-transparent' : ''
-                        }`}
-                        animate={{
-                          scale: isActive ? [1, 1.05, 1] : 1,
-                        }}
-                        transition={{
-                          duration: 2,
-                          repeat: isActive ? Infinity : 0,
-                          ease: 'easeInOut',
-                        }}
-                      >
-                        {item.name}
-                      </motion.span>
-
-                      {/* Sparkle Effect on Hover */}
-                      {isHovered && (
-                        <>
-                          <motion.div
-                            className="absolute top-1 right-1 w-1 h-1 rounded-full bg-cyan-400"
-                            initial={{ opacity: 0, scale: 0 }}
-                            animate={{ opacity: [0, 1, 0], scale: [0, 1, 0] }}
-                            transition={{ duration: 1, repeat: Infinity }}
-                          />
-                          <motion.div
-                            className="absolute bottom-1 left-1 w-1 h-1 rounded-full bg-blue-400"
-                            initial={{ opacity: 0, scale: 0 }}
-                            animate={{ opacity: [0, 1, 0], scale: [0, 1, 0] }}
-                            transition={{ duration: 1, repeat: Infinity, delay: 0.5 }}
-                          />
-                        </>
-                      )}
-                    </motion.div>
+                    {/* Active Underline (Animated from center) */}
+                    <div className="absolute bottom-[4px] left-1/2 h-[2px] bg-[#B08968] transition-all duration-300 ease-[cubic-bezier(.22,1,.36,1)] rounded-full"
+                         style={{
+                           width: isActive ? '24px' : '0px',
+                           transform: 'translateX(-50%)',
+                           boxShadow: isActive ? '0 0 8px rgba(176,137,104,0.6)' : 'none'
+                         }} />
+                         
+                    {/* Active Bronze Background Glow */}
+                    <div className={`absolute inset-0 rounded-full bg-[radial-gradient(circle_at_center,rgba(176,137,104,0.15)_0%,transparent_70%)] transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0'}`} />
                   </Link>
                 )
               })}
             </div>
 
-            {/* Notification Bell - Only show when logged in */}
-            {user && (
-              <motion.div
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: 0.2 }}
-              >
-                <NotificationDropdown />
-              </motion.div>
-            )}
+            {/* Right Actions */}
+            <div className="hidden md:flex items-center space-x-4">
+              {user && (
+                <div className="flex items-center justify-center h-[74px]">
+                  <NotificationDropdown />
+                </div>
+              )}
+              {!user && (
+                <Link to="/login">
+                  <button className="px-6 py-2 rounded-full font-medium text-white transition-all duration-300 hover:scale-105 hover:bg-white/10" style={{ border: '1px solid rgba(255,255,255,0.15)' }}>
+                    Login
+                  </button>
+                </Link>
+              )}
+            </div>
 
-            {/* Auth Buttons with Enhanced Animation */}
-            {!user && (
-              <Link to="/login">
-                <motion.button
-                  whileHover={{ 
-                    scale: 1.05,
-                    boxShadow: '0 10px 40px -10px rgba(6, 182, 212, 0.5)',
-                  }}
-                  whileTap={{ scale: 0.95 }}
-                  className="relative px-6 py-2.5 rounded-xl font-semibold text-white overflow-hidden group"
-                  style={{
-                    background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #8b5cf6 100%)',
-                    backgroundSize: '200% 100%',
-                  }}
-                  animate={{
-                    backgroundPosition: ['0% 0%', '100% 0%', '0% 0%'],
-                  }}
-                  transition={{
-                    backgroundPosition: {
-                      duration: 3,
-                      repeat: Infinity,
-                      ease: 'linear',
-                    },
-                  }}
-                >
-                  {/* Shine Effect */}
-                  <motion.div
-                    className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12"
-                    initial={{ x: '-100%' }}
-                    whileHover={{ x: '200%' }}
-                    transition={{ duration: 0.6 }}
-                  />
-                  <span className="relative z-10">Login</span>
-                </motion.button>
-              </Link>
-            )}
-          </div>
-
-          {/* Mobile menu button */}
-          <div className="md:hidden flex items-center space-x-3">
-            {/* Mobile Notification Bell - Only show when logged in */}
-            {user && <NotificationDropdown />}
-
-            <motion.button
-              whileTap={{ scale: 0.9, rotate: 90 }}
-              whileHover={{ scale: 1.05 }}
-              onClick={() => setIsOpen(!isOpen)}
-              className="relative p-2 rounded-xl transition-all duration-300"
-              style={{
-                background: isDark 
-                  ? 'rgba(30, 41, 59, 0.6)' 
-                  : 'rgba(241, 245, 249, 0.8)',
-                border: `1px solid ${isDark ? 'rgba(148, 163, 184, 0.2)' : 'rgba(15, 23, 42, 0.1)'}`,
-              }}
-            >
-              <motion.div
-                animate={{ rotate: isOpen ? 180 : 0 }}
-                transition={{ duration: 0.3 }}
+            {/* Mobile menu button */}
+            <div className="md:hidden flex items-center space-x-4 h-[74px]">
+              {user && <NotificationDropdown />}
+              <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="p-2 rounded-full transition-all duration-300 hover:bg-white/10"
               >
                 {isOpen ? (
-                  <XMarkIcon className="w-6 h-6" style={{ color: isDark ? '#06b6d4' : '#0891b2' }} />
+                  <XMarkIcon className="w-6 h-6 text-white" />
                 ) : (
-                  <Bars3Icon className="w-6 h-6" style={{ color: isDark ? '#94a3b8' : '#64748b' }} />
+                  <Bars3Icon className="w-6 h-6 text-white" />
                 )}
-              </motion.div>
-              
-              {/* Ripple Effect */}
-              {isOpen && (
-                <motion.div
-                  className="absolute inset-0 rounded-xl border-2 border-cyan-500"
-                  initial={{ scale: 1, opacity: 0.5 }}
-                  animate={{ scale: 1.5, opacity: 0 }}
-                  transition={{ duration: 0.6 }}
-                />
-              )}
-            </motion.button>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
-  </motion.nav>
+      </nav>
 
       {/* Mobile Navigation with Enhanced Animations */}
       <motion.div
@@ -401,13 +192,9 @@ const Navbar = () => {
         }}
         className="md:hidden overflow-hidden fixed top-20 left-0 right-0 z-[99]"
         style={{
-          background: isDark 
-            ? 'linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%)' 
-            : 'linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.9) 100%)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderBottom: `1px solid ${isDark ? 'rgba(148, 163, 184, 0.1)' : 'rgba(15, 23, 42, 0.05)'}`,
-          boxShadow: '0 10px 40px -10px rgba(0, 0, 0, 0.3)',
+          background: '#0A0A0A',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          boxShadow: '0 12px 30px rgba(0, 0, 0, 0.5)',
         }}
       >
         <div className="px-4 py-4 space-y-2 max-h-[calc(100vh-5rem)] overflow-y-auto">
@@ -440,9 +227,7 @@ const Navbar = () => {
                     whileTap={{ scale: 0.95 }}
                     className="flex items-center space-x-3 px-4 py-3.5 transition-all duration-300 relative z-10"
                     style={{
-                      color: isActive 
-                        ? (isDark ? '#06b6d4' : '#0891b2')
-                        : (isDark ? '#94a3b8' : '#64748b'),
+                      color: isActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.72)',
                     }}
                   >
                     {/* Active Background */}
@@ -451,10 +236,8 @@ const Navbar = () => {
                         layoutId="mobileNavBackground"
                         className="absolute inset-0 rounded-xl"
                         style={{
-                          background: isDark
-                            ? 'linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(59, 130, 246, 0.1) 100%)'
-                            : 'linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)',
-                          boxShadow: '0 0 20px rgba(6, 182, 212, 0.2)',
+                          background: 'rgba(255, 106, 0, 0.2)',
+                          boxShadow: '0 0 12px rgba(255, 106, 0, 0.2)',
                         }}
                         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                       />
@@ -465,8 +248,8 @@ const Navbar = () => {
                       className="absolute inset-0 rounded-xl"
                       style={{
                         background: isDark
-                          ? 'rgba(148, 163, 184, 0.05)'
-                          : 'rgba(15, 23, 42, 0.03)',
+                          ? 'rgba(255, 255, 255, 0.05)'
+                          : 'rgba(10, 10, 10, 0.03)',
                       }}
                       initial={{ opacity: 0 }}
                       whileHover={{ opacity: 1 }}
@@ -488,7 +271,7 @@ const Navbar = () => {
                     </motion.div>
                     
                     <span className={`font-semibold relative z-10 ${
-                      isActive ? 'bg-gradient-to-r from-cyan-500 to-blue-500 bg-clip-text text-transparent' : ''
+                      isActive ? 'text-white' : ''
                     }`}>
                       {item.name}
                     </span>
@@ -496,7 +279,7 @@ const Navbar = () => {
                     {/* Active Indicator */}
                     {isActive && (
                       <motion.div
-                        className="absolute right-4 w-2 h-2 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500"
+                        className="absolute right-4 w-2 h-2 rounded-full bg-orange-500"
                         animate={{
                           scale: [1, 1.5, 1],
                           opacity: [1, 0.5, 1],
@@ -513,7 +296,7 @@ const Navbar = () => {
                   {/* Left Border Indicator */}
                   {isActive && (
                     <motion.div
-                      className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-gradient-to-b from-cyan-500 to-blue-500"
+                      className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-orange-500"
                       initial={{ scaleY: 0 }}
                       animate={{ scaleY: 1 }}
                       transition={{ duration: 0.3 }}
@@ -535,7 +318,7 @@ const Navbar = () => {
               }}
               transition={{ delay: navItems.length * 0.05 + 0.1 }}
               style={{
-                borderTop: `1px solid ${isDark ? 'rgba(148, 163, 184, 0.1)' : 'rgba(15, 23, 42, 0.05)'}`,
+                borderTop: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.08)'}`,
               }}
             >
               <Link
@@ -545,21 +328,10 @@ const Navbar = () => {
               >
                 <motion.button 
                   whileTap={{ scale: 0.95 }}
-                  className="w-full px-6 py-3.5 rounded-xl font-semibold text-white overflow-hidden relative group"
+                  className="w-full px-6 py-3.5 rounded-xl font-semibold text-black overflow-hidden relative group"
                   style={{
-                    background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #8b5cf6 100%)',
-                    backgroundSize: '200% 100%',
-                    boxShadow: '0 10px 30px -10px rgba(6, 182, 212, 0.5)',
-                  }}
-                  animate={{
-                    backgroundPosition: ['0% 0%', '100% 0%', '0% 0%'],
-                  }}
-                  transition={{
-                    backgroundPosition: {
-                      duration: 3,
-                      repeat: Infinity,
-                      ease: 'linear',
-                    },
+                    background: '#FF6A00',
+                    boxShadow: '0 0 12px rgba(255, 106, 0, 0.24)',
                   }}
                 >
                   {/* Shine Effect */}

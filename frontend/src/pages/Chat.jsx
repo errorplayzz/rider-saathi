@@ -1,32 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  PaperAirplaneIcon,
-  MagnifyingGlassIcon,
-  UserGroupIcon,
-  MapPinIcon,
-  PhotoIcon,
-  LinkIcon,
-  ChatBubbleLeftIcon,
-  HeartIcon,
-  ArrowUpIcon,
-  ArrowDownIcon,
-  ChatBubbleOvalLeftEllipsisIcon,
-  EllipsisVerticalIcon,
-  UserPlusIcon,
-  CheckIcon,
-  XMarkIcon,
-  VideoCameraIcon,
-  PlayIcon,
-  GlobeAltIcon,
-  ShieldCheckIcon,
-  BoltIcon,
-  UserCircleIcon,
-  Squares2X2Icon,
-  UsersIcon,
-  PlusCircleIcon,
-  FlagIcon,
-  StarIcon
+  PaperAirplaneIcon, MagnifyingGlassIcon, UserGroupIcon, MapPinIcon, PhotoIcon,
+  LinkIcon, ChatBubbleLeftIcon, HeartIcon, ArrowUpIcon, ArrowDownIcon,
+  ChatBubbleOvalLeftEllipsisIcon, EllipsisVerticalIcon, UserPlusIcon, CheckIcon,
+  XMarkIcon, VideoCameraIcon, PlayIcon, GlobeAltIcon, ShieldCheckIcon, BoltIcon,
+  UserCircleIcon, Squares2X2Icon, UsersIcon, PlusCircleIcon, FlagIcon, StarIcon,
+  PhoneIcon, ArrowPathIcon, FaceSmileIcon, SparklesIcon, ShareIcon, ShieldExclamationIcon,
+  CloudIcon, MapIcon
 } from '@heroicons/react/24/outline'
 import { HeartIcon as HeartSolidIcon } from '@heroicons/react/24/solid'
 import { useAuth } from '../contexts/AuthContext'
@@ -35,7 +16,7 @@ import { friendsAPI, messagesAPI, groupsAPI, communitiesAPI, postsAPI } from '..
 
 const Chat = () => {
   const { user } = useAuth()
-  const { connected, onlineUsers, sendMessage, joinChatRoom } = useSocket()
+  const { connected, onlineUsers, sendMessage, joinChatRoom, sendTypingStatus } = useSocket()
 
   // Panel States
   const [activeTab, setActiveTab] = useState('friends') // friends | communities | nearby | groups
@@ -66,14 +47,20 @@ const Chat = () => {
   
   // UI States
   const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searchLoading, setSearchLoading] = useState(false)
   const [messageInput, setMessageInput] = useState('')
   const [postInput, setPostInput] = useState('')
   const [showNewPost, setShowNewPost] = useState(false)
   const [selectedPost, setSelectedPost] = useState(null)
   const [showMediaUpload, setShowMediaUpload] = useState(false)
   const [sendingMessage, setSendingMessage] = useState(false)
+  const [isPeerTyping, setIsPeerTyping] = useState(false)
 
   const messagesEndRef = useRef(null)
+  const typingTimeoutRef = useRef(null)
+
+  const getEntityId = (item) => item?.id || item?._id
 
   // Load real data from backend
   useEffect(() => {
@@ -82,6 +69,34 @@ const Chat = () => {
       loadNearbyRiders()
     }
   }, [user])
+
+  useEffect(() => {
+    if (activeTab !== 'friends') {
+      setSearchResults([])
+      return
+    }
+
+    const q = (searchQuery || '').trim().replace(/^@/, '').toLowerCase()
+    if (q.length < 2) {
+      setSearchResults([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setSearchLoading(true)
+        const res = await friendsAPI.searchByUsername(q)
+        setSearchResults(res?.data || [])
+      } catch (e) {
+        console.error('Username search failed:', e)
+        setSearchResults([])
+      } finally {
+        setSearchLoading(false)
+      }
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [searchQuery, activeTab])
 
   // Load nearby riders when on nearby tab
   useEffect(() => {
@@ -101,10 +116,37 @@ const Chat = () => {
         messagesAPI.getConversations().catch(() => ({ data: [] }))
       ])
 
-      setFriends(friendsRes.data || [])
-      setFriendRequests(requestsRes.data || [])
-      setGroups(groupsRes.data || [])
-      setCommunities(communitiesRes.data || [])
+      const normalizedFriends = (friendsRes.data || []).map((f) => ({
+        ...f,
+        id: getEntityId(f),
+        bike: f?.bikeDetails?.model || f?.bike || 'Rider'
+      }))
+
+      const normalizedRequests = (requestsRes.data || []).map((r) => ({
+        ...r,
+        id: getEntityId(r),
+        sender: r.sender || {}
+      }))
+
+      const normalizedGroups = (groupsRes.data || []).map((g) => ({
+        ...g,
+        id: getEntityId(g),
+        membersCount: Array.isArray(g.members) ? g.members.length : Number(g.members || 0),
+        unread: g.unreadCount || 0,
+        lastMessageText: g?.lastMessage?.content || g?.lastMessage?.message || 'No messages yet'
+      }))
+
+      const normalizedCommunities = (communitiesRes.data || []).map((c) => ({
+        ...c,
+        id: getEntityId(c),
+        membersCount: c?.stats?.totalMembers || c?.membersCount || (Array.isArray(c.members) ? c.members.length : 0),
+        avatarLabel: c?.name?.charAt(0)?.toUpperCase() || 'C'
+      }))
+
+      setFriends(normalizedFriends)
+      setFriendRequests(normalizedRequests)
+      setGroups(normalizedGroups)
+      setCommunities(normalizedCommunities)
       setConversations(conversationsRes.data || [])
     } catch (error) {
       console.error('Failed to load chat data:', error)
@@ -128,33 +170,7 @@ const Chat = () => {
           },
           (error) => {
             console.warn('Location access denied:', error)
-            // Set some sample riders for demo purposes
-            setNearbyRiders([
-              { 
-                id: 'demo1', 
-                _id: 'demo1',
-                name: 'Alex Kumar', 
-                bike: 'Royal Enfield Classic 350', 
-                distance: '2.3km', 
-                online: true 
-              },
-              { 
-                id: 'demo2', 
-                _id: 'demo2',
-                name: 'Priya Singh', 
-                bike: 'KTM Duke 390', 
-                distance: '3.1km', 
-                online: true 
-              },
-              { 
-                id: 'demo3', 
-                _id: 'demo3',
-                name: 'Rahul Sharma', 
-                bike: 'Honda CB Hornet 160R', 
-                distance: '4.7km', 
-                online: false 
-              }
-            ])
+            setNearbyRiders([])
           },
           {
             enableHighAccuracy: false,
@@ -164,39 +180,11 @@ const Chat = () => {
         )
       } else {
         console.warn('Geolocation not supported')
-        // Set demo riders if geolocation not available
-        setNearbyRiders([
-          { 
-            id: 'demo1', 
-            _id: 'demo1',
-            name: 'Alex Kumar', 
-            bike: 'Royal Enfield Classic 350', 
-            distance: '2.3km', 
-            online: true 
-          },
-          { 
-            id: 'demo2', 
-            _id: 'demo2',
-            name: 'Priya Singh', 
-            bike: 'KTM Duke 390', 
-            distance: '3.1km', 
-            online: true 
-          }
-        ])
+        setNearbyRiders([])
       }
     } catch (error) {
       console.error('Failed to load nearby riders:', error)
-      // Still set demo data for testing
-      setNearbyRiders([
-        { 
-          id: 'demo1', 
-          _id: 'demo1',
-          name: 'Alex Kumar', 
-          bike: 'Royal Enfield Classic 350', 
-          distance: '2.3km', 
-          online: true 
-        }
-      ])
+      setNearbyRiders([])
     }
   }
 
@@ -238,7 +226,20 @@ const Chat = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
-  const sendFriendRequest = async (userId) => {
+  const isOwnMessage = (msg) => {
+    if (!selectedChat || selectedChat.type !== 'dm') return false
+    const senderId = (msg?.sender?.id || msg?.sender?._id || msg?.sender || '').toString()
+    const activePartnerId = (selectedChat.id || '').toString()
+    return senderId && activePartnerId && senderId !== activePartnerId
+  }
+
+  const sendFriendRequest = async (targetId) => {
+    const userId = (targetId || '').toString().trim()
+    if (!userId) {
+      alert('Invalid rider selection. Please refresh and try again.')
+      return
+    }
+
     try {
       await friendsAPI.sendFriendRequest(userId, 'Hi! I\'d like to connect with you on Rider Saathi!')
       
@@ -246,11 +247,13 @@ const Chat = () => {
       console.log('Friend request sent!')
       
       // Optionally remove from nearby riders or show as pending
-      setNearbyRiders(prev => prev.filter(rider => rider._id !== userId))
+      setNearbyRiders(prev => prev.filter(rider => getEntityId(rider) !== userId))
+      setSearchResults(prev => prev.filter(rider => getEntityId(rider) !== userId))
       
     } catch (error) {
       console.error('Failed to send friend request:', error)
-      alert('Failed to send friend request. Please try again.')
+      const apiMessage = error?.response?.data?.error || error?.response?.data?.message
+      alert(apiMessage || 'Failed to send friend request. Please try again.')
     }
   }
 
@@ -296,11 +299,18 @@ const Chat = () => {
         type: groupData.type,
         city: groupData.city,
         route: groupData.route,
-        members: groupData.selectedMembers
+        memberIds: groupData.selectedMembers
       }
 
       const response = await groupsAPI.createGroup(newGroupData)
-      setGroups(prev => [response.data, ...prev])
+      const createdGroup = response?.data || response
+      setGroups(prev => [{
+        ...createdGroup,
+        id: getEntityId(createdGroup),
+        membersCount: Array.isArray(createdGroup?.members) ? createdGroup.members.length : 1,
+        unread: 0,
+        lastMessageText: 'Group created'
+      }, ...prev])
       setGroupData({
         name: '',
         description: '',
@@ -310,7 +320,7 @@ const Chat = () => {
         selectedMembers: []
       })
       setShowGroupModal(false)
-      setSelectedChat({ type: 'group', id: response.data._id, data: response.data })
+      setSelectedChat({ type: 'group', id: getEntityId(createdGroup), data: createdGroup })
     } catch (error) {
       console.error('Failed to create group:', error)
     }
@@ -327,25 +337,144 @@ const Chat = () => {
 
   const handleOpenChat = async (chatType, chatData) => {
     try {
-      setSelectedChat({ type: chatType, id: chatData._id, data: chatData })
+      const chatId = getEntityId(chatData)
+      setSelectedChat({ type: chatType, id: chatId, data: chatData })
       
       if (chatType === 'dm') {
-        const messagesRes = await messagesAPI.getConversation(chatData._id)
+        const messagesRes = await messagesAPI.getConversation(chatId)
         setMessages(messagesRes.data || [])
-        if (joinChatRoom) joinChatRoom(chatData._id)
+
+        // Mark all unread incoming messages as read when user opens the DM.
+        await messagesAPI.markConversationRead(chatId).catch(() => null)
       } else if (chatType === 'group') {
-        const messagesRes = await groupsAPI.getGroupMessages(chatData._id)
+        const messagesRes = await groupsAPI.getGroupMessages(chatId)
         setMessages(messagesRes.data || [])
-        if (joinChatRoom) joinChatRoom(chatData._id)
       } else if (chatType === 'community') {
-        const postsRes = await postsAPI.getFeed(chatData._id)
+        const postsRes = await postsAPI.getFeed(chatId)
         setPosts(postsRes.data || [])
-        if (joinChatRoom) joinChatRoom(chatData._id)
       }
     } catch (error) {
       console.error('Failed to load chat:', error)
       setMessages([])
     }
+  }
+
+  // Listen for realtime direct-message events so receiver sees messages instantly.
+  useEffect(() => {
+    const handleDirectMessage = (event) => {
+      const detail = event?.detail || {}
+      const incomingMsg = detail?.message
+      const conversationWith = (detail?.conversationWith || '').toString()
+
+      if (!incomingMsg || !selectedChat || selectedChat.type !== 'dm') return
+      if ((selectedChat.id || '').toString() !== conversationWith) return
+
+      setMessages((prev) => {
+        const exists = prev.some((m) => (m?._id || m?.id) === (incomingMsg?._id || incomingMsg?.id))
+        if (exists) return prev
+        return [...prev, incomingMsg]
+      })
+
+      // Delivery acknowledgement for sender tick state.
+      messagesAPI.markAsDelivered(incomingMsg._id).catch(() => null)
+      // If chat is open, mark read immediately for real-time double-blue tick.
+      messagesAPI.markAsRead(incomingMsg._id).catch(() => null)
+
+      scrollToBottom()
+    }
+
+    window.addEventListener('direct-message', handleDirectMessage)
+    return () => window.removeEventListener('direct-message', handleDirectMessage)
+  }, [selectedChat])
+
+  useEffect(() => {
+    const handleMessageStatusUpdate = (event) => {
+      const detail = event?.detail || {}
+      const messageId = (detail?.messageId || '').toString()
+      const status = detail?.status
+      if (!messageId || !status) return
+
+      setMessages((prev) => prev.map((m) => {
+        const currentId = (m?._id || m?.id || '').toString()
+        if (currentId !== messageId) return m
+        return {
+          ...m,
+          status,
+          deliveredAt: detail?.updatedAt || m?.deliveredAt,
+          readAt: detail?.updatedAt || m?.readAt
+        }
+      }))
+    }
+
+    const handleMessageStatusBatchUpdate = (event) => {
+      const detail = event?.detail || {}
+      const ids = new Set((detail?.messageIds || []).map((id) => id?.toString?.()))
+      const status = detail?.status
+      if (ids.size === 0 || !status) return
+
+      setMessages((prev) => prev.map((m) => {
+        const currentId = (m?._id || m?.id || '').toString()
+        if (!ids.has(currentId)) return m
+        return {
+          ...m,
+          status,
+          readAt: detail?.updatedAt || m?.readAt
+        }
+      }))
+    }
+
+    const handleTypingIndicator = (event) => {
+      const detail = event?.detail || {}
+      if (!selectedChat || selectedChat.type !== 'dm') return
+
+      const fromUserId = (detail?.fromUserId || '').toString()
+      if (!fromUserId || fromUserId !== (selectedChat.id || '').toString()) return
+
+      setIsPeerTyping(!!detail?.isTyping)
+    }
+
+    window.addEventListener('message-status-update', handleMessageStatusUpdate)
+    window.addEventListener('message-status-batch-update', handleMessageStatusBatchUpdate)
+    window.addEventListener('typing-indicator', handleTypingIndicator)
+
+    return () => {
+      window.removeEventListener('message-status-update', handleMessageStatusUpdate)
+      window.removeEventListener('message-status-batch-update', handleMessageStatusBatchUpdate)
+      window.removeEventListener('typing-indicator', handleTypingIndicator)
+    }
+  }, [selectedChat])
+
+  useEffect(() => {
+    setIsPeerTyping(false)
+  }, [selectedChat?.id])
+
+  const handleMessageInputChange = (e) => {
+    const value = e.target.value
+    setMessageInput(value)
+
+    if (!selectedChat || selectedChat.type !== 'dm' || !sendTypingStatus) return
+    const targetUserId = selectedChat.id
+    sendTypingStatus(targetUserId, true)
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current)
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      sendTypingStatus(targetUserId, false)
+    }, 1200)
+  }
+
+  const getTickLabel = (status) => {
+    if (status === 'read') return '✓✓'
+    if (status === 'delivered') return '✓✓'
+    return '✓'
+  }
+
+  const getTickClass = (status) => {
+    if (status === 'read') return 'text-sky-200'
+    if (status === 'delivered') return 'text-orange-100'
+    return 'text-orange-200'
   }
 
   const handleSendMessage = async () => {
@@ -355,1013 +484,477 @@ const Chat = () => {
     setMessageInput('')
     setSendingMessage(true)
 
+    if (selectedChat?.type === 'dm' && sendTypingStatus) {
+      sendTypingStatus(selectedChat.id, false)
+    }
+
     try {
-      // Send via Socket.IO for real-time messaging
-      if (sendMessage && connected) {
-        const success = sendMessage(selectedChat.id, content)
-        if (!success) {
-          throw new Error('Failed to send message via Socket.IO')
-        }
-        console.log('Message sent via Socket.IO')
-      } else {
-        // Fallback to REST API if Socket.IO not available
-        if (selectedChat.type === 'dm') {
-          await messagesAPI.sendMessage(selectedChat.id, content, 'text')
-        } else if (selectedChat.type === 'group') {
-          await groupsAPI.sendGroupMessage(selectedChat.id, content)
-        }
-        console.log('Message sent via REST API')
+      if (selectedChat.type === 'dm') {
+        const sentRes = await messagesAPI.sendMessage(selectedChat.id, content, 'text')
+        const sentMsg = sentRes?.data || sentRes
+        setMessages(prev => ([...prev, {
+          ...(sentMsg || {}),
+          id: sentMsg?._id || `temp-${Date.now()}`,
+          content,
+          sender: sentMsg?.sender || { id: user.id, _id: user.id, name: user?.user_metadata?.name || 'You' },
+          timestamp: sentMsg?.createdAt || new Date().toISOString(),
+          status: sentMsg?.status || 'sent'
+        }]))
+      } else if (selectedChat.type === 'group') {
+        const sentRes = await groupsAPI.sendGroupMessage(selectedChat.id, content)
+        const sentMsg = sentRes?.data || sentRes
+        setMessages(prev => ([...prev, {
+          ...(sentMsg || {}),
+          id: sentMsg?._id || `temp-${Date.now()}`,
+          content,
+          sender: sentMsg?.sender || { id: user.id, _id: user.id, name: user?.user_metadata?.name || 'You' },
+          timestamp: sentMsg?.createdAt || new Date().toISOString(),
+          status: sentMsg?.status || 'sent'
+        }]))
       }
-      
-      // No need to reload messages - real-time events will handle this
+
+      scrollToBottom()
     } catch (error) {
       console.error('Failed to send message:', error)
+      setMessageInput(content)
     } finally {
       setSendingMessage(false)
     }
   }
 
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+    }
+  }, [])
+
   if (loading) {
     return (
-      <div className="fixed top-16 left-0 right-0 bottom-0 flex items-center justify-center bg-gradient-to-br from-slate-50 to-cyan-50 dark:from-slate-900 dark:to-slate-800">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-600 dark:text-slate-300 font-medium">Loading your connections...</p>
-          <p className="text-slate-400 dark:text-slate-500 text-sm mt-2">
-            {connected ? '✓ Connected to server' : '○ Connecting...'}
-          </p>
+      <div className="fixed top-16 left-0 right-0 bottom-0 flex items-center justify-center bg-[#050505]">
+        <div className="flex flex-col items-center">
+          <div className="w-12 h-12 border-2 border-[#B08968]/30 border-t-[#B08968] rounded-full animate-spin mb-4" />
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#86868B]">Connecting to Network</p>
         </div>
       </div>
     )
   }
 
+  // Find the currently selected conversation/community/group to render the correct view
+  const activeChatEntity = selectedChat ? (
+    selectedChat.type === 'dm' ? friends.find(f => f.id === selectedChat.id) :
+    selectedChat.type === 'community' ? communities.find(c => c.id === selectedChat.id) :
+    groups.find(g => g.id === selectedChat.id)
+  ) : null;
+
   return (
-    <div className="fixed top-16 left-0 right-0 bottom-0 bg-white dark:bg-slate-950 flex overflow-hidden">
-      {/* LEFT PANEL - Social & Discovery */}
-      <div className="w-80 border-r border-slate-200 dark:border-slate-800 flex flex-col bg-slate-50 dark:bg-slate-900 h-full">
-        {/* Header */}
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800">
-          <div className="mb-4">
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1 flex items-center">
-              <ChatBubbleLeftIcon className="w-6 h-6 mr-2.5 text-cyan-500" />
-              Connections
+    <div className="fixed top-16 left-0 right-0 bottom-0 bg-gradient-to-br from-[#1C1C1E] via-[#0A0A0A] to-[#050505] text-[#F5F5F7] flex overflow-hidden selection:bg-[#B08968]/30">
+      
+      {/* Background Depth Effects */}
+      <div className="absolute inset-0 pointer-events-none z-0">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-[#B08968]/20 via-[#1A1A1A]/50 to-[#050505]"></div>
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-20 mix-blend-overlay"></div>
+      </div>
+
+      {/* ========================================= */}
+      {/* LEFT SIDEBAR: CONNECTIONS & DISCOVERY */}
+      {/* ========================================= */}
+      <div className="w-80 lg:w-96 flex-shrink-0 flex flex-col bg-[#0A0A0A]/90 backdrop-blur-2xl border-r border-white/5 relative z-10">
+        
+        {/* Header & Search */}
+        <div className="p-6 pb-4">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-3">
+              <span className="w-8 h-8 rounded-full bg-gradient-to-br from-[#B08968] to-[#8C6D53] flex items-center justify-center shadow-[0_0_15px_rgba(176,137,104,0.4)]">
+                <GlobeAltIcon className="w-4 h-4 text-[#050505]" />
+              </span>
+              Network
             </h2>
-            <p className="text-xs text-slate-600 dark:text-slate-400 ml-8.5">Your riding community</p>
+            <button className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
+              <PlusCircleIcon className="w-5 h-5 text-[#86868B]" />
+            </button>
           </div>
-          
-          {/* Search Bar */}
-          <div className="relative">
+
+          <div className="relative group">
+            <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] group-focus-within:text-[#B08968] transition-colors" />
             <input
               type="text"
+              placeholder="Search riders, groups..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Find riders, groups, communities..."
-              className="w-full px-4 py-2.5 pl-10 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 outline-none text-sm shadow-sm transition-all"
+              className="w-full bg-[#1C1C1E] border border-transparent focus:border-[#B08968]/30 rounded-full py-3 pl-10 pr-4 text-sm text-white placeholder:text-[#86868B] outline-none transition-all shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
             />
-            <MagnifyingGlassIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="grid grid-cols-4 border-b border-slate-200 dark:border-slate-800">
-          <button
-            onClick={() => setActiveTab('friends')}
-            className={`py-3 text-xs font-medium transition-colors ${
-              activeTab === 'friends'
-                ? 'text-cyan-600 dark:text-cyan-400 border-b-2 border-cyan-500'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <UserCircleIcon className="w-4 h-4 inline mr-1" />
-            Friends
-          </button>
-          <button
-            onClick={() => setActiveTab('groups')}
-            className={`py-3 text-xs font-medium transition-colors ${
-              activeTab === 'groups'
-                ? 'text-cyan-600 dark:text-cyan-400 border-b-2 border-cyan-500'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <UserGroupIcon className="w-4 h-4 inline mr-1" />
-            Groups
-          </button>
-          <button
-            onClick={() => setActiveTab('communities')}
-            className={`py-3 text-xs font-medium transition-colors ${
-              activeTab === 'communities'
-                ? 'text-cyan-600 dark:text-cyan-400 border-b-2 border-cyan-500'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <UsersIcon className="w-4 h-4 inline mr-1" />
-            Comm
-          </button>
-          <button
-            onClick={() => setActiveTab('nearby')}
-            className={`py-3 text-xs font-medium transition-colors ${
-              activeTab === 'nearby'
-                ? 'text-cyan-600 dark:text-cyan-400 border-b-2 border-cyan-500'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <MapPinIcon className="w-4 h-4 inline mr-1" />
-            Nearby
-          </button>
+        {/* Navigation Pills */}
+        <div className="px-6 mb-4 flex gap-2 overflow-x-auto scrollbar-hide pb-2">
+          {['friends', 'groups', 'communities', 'nearby'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-shrink-0 px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-gradient-to-r from-[#B08968]/20 to-[#8C6D53]/20 text-[#B08968] border border-[#B08968]/40 shadow-[0_0_15px_rgba(176,137,104,0.3),inset_0_1px_0_rgba(255,255,255,0.1)]' : 'bg-transparent text-[#86868B] hover:text-white hover:bg-white/5 border border-transparent'}`}
+            >
+              {tab}
+            </button>
+          ))}
         </div>
 
-        {/* Content List */}
-        <div className="flex-1 overflow-y-auto">
-          <AnimatePresence mode="wait">
-            {/* Friends Tab */}
-            {activeTab === 'friends' && (
-              <motion.div
-                key="friends"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="p-3 space-y-3"
-              >
-                {/* Friend Requests */}
-                {friendRequests.length > 0 && (
-                  <div className="mb-4">
-                    <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 px-1">
-                      Pending Requests · {friendRequests.length}
-                    </h3>
-                    {friendRequests.map(request => (
-                      <motion.div
-                        key={request.id}
-                        initial={{ scale: 0.95, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        className="p-3.5 bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 rounded-xl border border-cyan-200 dark:border-cyan-800/50 mb-2 shadow-sm"
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <h4 className="font-semibold text-slate-900 dark:text-white text-sm mb-0.5">{request.name}</h4>
-                            <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">{request.bike}</p>
-                            <p className="text-xs text-cyan-600 dark:text-cyan-400 font-medium">{request.mutualFriends} mutual connections</p>
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => acceptFriendRequest(request.id)}
-                            className="flex-1 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-xs font-medium transition-colors"
-                          >
-                            <CheckIcon className="w-3 h-3 inline mr-1" />
-                            Accept
-                          </button>
-                          <button
-                            onClick={() => rejectFriendRequest(request.id)}
-                            className="flex-1 px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium transition-colors"
-                          >
-                            <XMarkIcon className="w-3 h-3 inline mr-1" />
-                            Decline
-                          </button>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Friends List */}
-                <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 px-1">
-                  Friends · {friends.length}
-                </h3>
-                {friends.length === 0 ? (
-                  <div className="text-center py-12 px-4">
-                    <UserCircleIcon className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600 mb-3" />
-                    <p className="text-slate-500 dark:text-slate-400 text-sm">No friends yet</p>
-                    <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">Start connecting with riders!</p>
-                  </div>
-                ) : (
-                  friends.map(friend => (
-                  <motion.div
-                    key={friend._id}
-                    whileHover={{ scale: 1.01, x: 2 }}
-                    onClick={() => handleOpenChat('dm', friend)}
-                    className={`p-3.5 rounded-xl cursor-pointer transition-all ${
-                      selectedChat?.id === friend._id
-                        ? 'bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-900/30 dark:to-blue-900/30 ring-2 ring-cyan-500/50 shadow-md'
-                        : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 shadow-sm hover:shadow-md'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="relative">
-                        <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white font-bold">
-                          {friend.name?.charAt(0) || 'R'}
-                        </div>
-                        {friend.isOnline && (
-                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-white dark:border-slate-800 rounded-full"></div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-slate-900 dark:text-white text-sm truncate mb-0.5">{friend.name || 'Rider'}</h4>
-                        <p className="text-xs text-slate-600 dark:text-slate-400 truncate">{friend.bike?.model || 'Rider'}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5">{friend.city || 'Unknown'}</p>
-                      </div>
-                      {friend.isOnline && (
-                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                      )}
-                    </div>
-                  </motion.div>
-                  ))
-                )}
-              </motion.div>
-            )}
-
-            {/* Communities Tab */}
-            {activeTab === 'communities' && (
-              <motion.div
-                key="communities"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="p-3 space-y-3"
-              >
-                <button className="w-full p-3.5 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-xl font-semibold text-sm transition-all flex items-center justify-center shadow-lg shadow-purple-500/30 hover:shadow-purple-500/40">
-                  <PlusCircleIcon className="w-5 h-5 mr-2" />
-                  Create Community
-                </button>
-
-                <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 px-1">
-                  Communities · {communities.length}
-                </h3>
-                {communities.map(community => (
-                  <motion.div
-                    key={community.id}
-                    whileHover={{ scale: 1.01, x: 2 }}
-                    onClick={() => {
-                      setSelectedChat({ type: 'community', id: community.id, data: community })
-                      setViewMode('feed')
-                    }}
-                    className={`p-3.5 rounded-xl cursor-pointer transition-all ${
-                      selectedChat?.id === community.id
-                        ? 'bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/30 dark:to-pink-900/30 ring-2 ring-purple-500/50 shadow-md'
-                        : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 shadow-sm hover:shadow-md'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-500 rounded-lg flex items-center justify-center text-2xl">
-                        {community.avatar}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-1.5 mb-0.5">
-                          <h4 className="font-semibold text-slate-900 dark:text-white text-sm truncate">{community.name}</h4>
-                          {community.verified && (
-                            <ShieldCheckIcon className="w-4 h-4 text-cyan-500 flex-shrink-0" />
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">{community.members.toLocaleString()} members</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-500 capitalize mt-0.5">{community.type}</p>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </motion.div>
-            )}
-
-            {/* Groups Tab */}
-            {activeTab === 'groups' && (
-              <motion.div
-                key="groups"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="p-3 space-y-3"
-              >
-                <button
-                  onClick={() => setShowGroupModal(true)}
-                  className="w-full p-3.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white rounded-xl font-semibold text-sm transition-all flex items-center justify-center shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/40"
-                >
-                  <PlusCircleIcon className="w-5 h-5 mr-2" />
-                  Create Group
-                </button>
-
-                <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 px-1">
-                  Your Groups · {groups.length}
-                </h3>
-                {groups.map(group => (
-                  <motion.div
-                    key={group.id}
-                    whileHover={{ scale: 1.01, x: 2 }}
-                    onClick={() => setSelectedChat({ type: 'group', id: group.id, data: group })}
-                    className={`p-3.5 rounded-xl cursor-pointer transition-all ${
-                      selectedChat?.id === group.id
-                        ? 'bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-900/30 dark:to-blue-900/30 ring-2 ring-cyan-500/50 shadow-md'
-                        : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 shadow-sm hover:shadow-md'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-500 rounded-lg flex items-center justify-center text-white font-bold">
-                        {group.name.charAt(0)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2 mb-0.5">
-                          <h4 className="font-semibold text-slate-900 dark:text-white text-sm truncate">{group.name}</h4>
-                          {group.type === 'private' && (
-                            <span className="text-xs px-2 py-0.5 bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-400 rounded-full font-medium">
-                              Private
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-600 dark:text-slate-400 truncate mb-1">{group.lastMessage}</p>
-                        <div className="flex items-center space-x-2">
-                          <span className="text-xs text-slate-500 dark:text-slate-500">{group.members} members</span>
-                          {group.unread > 0 && (
-                            <>
-                              <span className="text-slate-400">•</span>
-                              <span className="text-xs px-1.5 py-0.5 bg-cyan-500 text-white rounded-full">
-                                {group.unread}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </motion.div>
-            )}
-
-            {/* Nearby Riders Tab */}
-            {activeTab === 'nearby' && (
-              <motion.div
-                key="nearby"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="p-3 space-y-3"
-              >
-                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                  <p className="text-xs text-blue-700 dark:text-blue-300 flex items-center">
-                    <MapPinIcon className="w-4 h-4 mr-1" />
-                    Riders within 5 km radius
-                  </p>
+        {/* List Content */}
+        <div className="flex-1 overflow-y-auto scrollbar-hide px-3 pb-6 space-y-1">
+          {searchLoading ? (
+            <div className="text-center py-8 text-[#86868B] text-xs uppercase tracking-widest animate-pulse">Scanning Network...</div>
+          ) : searchResults.length > 0 ? (
+            searchResults.map(result => (
+              <div key={result.id} className="p-3 rounded-2xl flex items-center gap-4 bg-white/5 border border-white/10">
+                <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center">
+                  <UserCircleIcon className="w-6 h-6 text-slate-400" />
                 </div>
-
-                <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 px-1">
-                  Nearby Riders · {nearbyRiders.length}
-                </h3>
-                {nearbyRiders.map(rider => (
-                  <motion.div
-                    key={rider.id}
-                    whileHover={{ scale: 1.01, x: 2 }}
-                    className="p-3.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-xl cursor-pointer transition-all shadow-sm hover:shadow-md"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="relative">
-                          <div className="w-10 h-10 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center text-white font-bold">
-                            {rider.name.charAt(0)}
-                          </div>
-                          {rider.online && (
-                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-white dark:border-slate-800 rounded-full"></div>
-                          )}
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-slate-900 dark:text-white text-sm mb-0.5">{rider.name}</h4>
-                          <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">{rider.bike}</p>
-                          <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">{rider.distance} away</p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => sendFriendRequest(rider._id)}
-                        className="p-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors"
-                      >
-                        <UserPlusIcon className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
+                <div>
+                  <h4 className="text-sm font-bold text-white">{result.username}</h4>
+                  <p className="text-xs text-[#86868B]">Rider</p>
+                </div>
+              </div>
+            ))
+          ) : activeTab === 'friends' ? (
+            friends.map(friend => (
+              <button
+                key={friend.id}
+                onClick={() => setSelectedChat({ type: 'dm', id: friend.id, data: friend })}
+                className={`w-full text-left p-3 rounded-2xl flex items-center gap-4 transition-all ${selectedChat?.id === friend.id ? 'bg-gradient-to-r from-[#1C1C1E] to-transparent border-l-2 border-[#B08968] shadow-[0_8px_16px_rgba(0,0,0,0.6)]' : 'hover:bg-white/5 border-l-2 border-transparent'}`}
+              >
+                <div className="relative">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-slate-700 to-slate-900 flex items-center justify-center border border-white/5">
+                    {friend.profilePicture ? (
+                      <img src={friend.profilePicture} className="w-full h-full rounded-full object-cover" />
+                    ) : (
+                      <span className="font-bold text-slate-300">{(friend.name || friend.username || 'U')[0].toUpperCase()}</span>
+                    )}
+                  </div>
+                  {friend.online && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-[#0A0A0A] shadow-[0_0_8px_rgba(34,197,94,0.6)]" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-baseline mb-1">
+                    <h4 className="text-sm font-bold text-white truncate">{friend.name || friend.username}</h4>
+                    <span className="text-[10px] text-[#86868B] flex-shrink-0">12:45</span>
+                  </div>
+                  <p className="text-xs text-[#86868B] truncate">Shared a new route to Ladakh.</p>
+                </div>
+              </button>
+            ))
+          ) : activeTab === 'groups' ? (
+             groups.map(group => (
+              <button
+                key={group.id}
+                onClick={() => setSelectedChat({ type: 'group', id: group.id, data: group })}
+                className={`w-full text-left p-3 rounded-2xl flex items-center gap-4 transition-all ${selectedChat?.id === group.id ? 'bg-[#1C1C1E] border border-white/10 shadow-[0_8px_16px_rgba(0,0,0,0.4)]' : 'hover:bg-white/5 border border-transparent'}`}
+              >
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#B08968]/20 to-[#8C6D53]/10 flex items-center justify-center border border-[#B08968]/30">
+                  <UserGroupIcon className="w-6 h-6 text-[#B08968]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-bold text-white truncate">{group.name}</h4>
+                  <p className="text-xs text-[#86868B] truncate">{group.membersCount} Members</p>
+                </div>
+              </button>
+            ))
+          ) : activeTab === 'nearby' ? (
+            nearbyRiders.map(rider => (
+              <div key={rider.id} className="p-3 rounded-2xl flex items-center gap-4 bg-white/5 hover:bg-white/10 transition-colors border border-transparent hover:border-white/5 group">
+                <div className="relative">
+                  <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center border border-white/5">
+                    <span className="font-bold text-slate-300">{(rider.name || 'U')[0]}</span>
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 bg-[#1C1C1E] border border-white/10 text-[8px] font-bold px-1.5 py-0.5 rounded-full text-[#B08968]">
+                    {rider.distance}
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-bold text-white truncate">{rider.name}</h4>
+                  <p className="text-[10px] text-[#86868B] uppercase tracking-wider truncate">{rider.bike}</p>
+                </div>
+                <button className="w-8 h-8 rounded-full bg-[#B08968]/20 flex items-center justify-center text-[#B08968] hover:bg-[#B08968] hover:text-white transition-colors opacity-0 group-hover:opacity-100">
+                  <PaperAirplaneIcon className="w-4 h-4 -rotate-45" />
+                </button>
+              </div>
+            ))
+          ) : (
+             <div className="text-center py-8 text-[#86868B] text-sm">Communities loading...</div>
+          )}
         </div>
       </div>
 
-      {/* CENTER PANEL - Main Interaction Area */}
-      <div className="flex-1 flex flex-col bg-white dark:bg-slate-950 h-full overflow-hidden">
-        {selectedChat ? (
-          <>
-            {/* Chat/Feed Header */}
-            <div className="h-16 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-6 bg-white dark:bg-slate-900 shadow-sm">
-              <div className="flex items-center space-x-4">
-                <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
-                  {selectedChat.type === 'community' ? selectedChat.data.avatar : selectedChat.data.name.charAt(0)}
+      {/* ========================================= */}
+      {/* CENTER STAGE: ACTIVE CHAT OR COMMUNITY HUB */}
+      {/* ========================================= */}
+      <div className="flex-1 flex flex-col relative z-10 bg-transparent">
+        {!selectedChat ? (
+          // --- EMPTY STATE: COMMUNITY HUB ---
+          <div className="h-full overflow-y-auto scrollbar-hide p-8 lg:p-12">
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto space-y-12">
+              
+              <div className="text-center space-y-4 pt-12 pb-8">
+                <div className="w-20 h-20 mx-auto bg-gradient-to-br from-[#B08968]/20 to-transparent rounded-full flex items-center justify-center border border-[#B08968]/30 shadow-[0_0_40px_rgba(176,137,104,0.25),inset_0_0_20px_rgba(176,137,104,0.2)]">
+                  <GlobeAltIcon className="w-10 h-10 text-[#B08968] drop-shadow-[0_0_8px_rgba(176,137,104,0.8)]" />
                 </div>
-                <div className="flex flex-col justify-center">
-                  <div className="flex items-center space-x-2">
-                    <h3 className="font-semibold text-slate-900 dark:text-white leading-tight">{selectedChat.data.name}</h3>
-                    {selectedChat.data.verified && (
-                      <ShieldCheckIcon className="w-4 h-4 text-cyan-500" />
-                    )}
+                <h1 className="text-4xl font-bold tracking-tight text-white drop-shadow-[0_2px_10px_rgba(255,255,255,0.1)]">Rider Network</h1>
+                <p className="text-[#86868B] max-w-md mx-auto text-sm">Discover routes, organize weekend rides, and connect with the motorcycling community around you.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* Weather & Telemetry */}
+                <div className="p-6 rounded-[32px] bg-gradient-to-br from-[#1C1C1E]/90 to-[#0A0A0A]/90 backdrop-blur-2xl border border-white/10 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.08)]">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#86868B]">Sector Conditions</h3>
+                    <CloudIcon className="w-5 h-5 text-[#B08968]" />
                   </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-tight">
-                    {selectedChat.type === 'community' 
-                      ? `${selectedChat.data.members.toLocaleString()} members`
-                      : selectedChat.data.online ? 'Online' : 'Offline'
-                    }
+                  <div className="flex items-end gap-4 mb-4">
+                    <div className="text-4xl font-bold text-white drop-shadow-sm">24°C</div>
+                    <div className="text-xs text-[#86868B] mb-1.5 font-medium">Clear Skies, Ideal for riding</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 mt-6">
+                     <div className="p-4 bg-white/[0.03] rounded-2xl border border-white/5 shadow-inner"><div className="text-[10px] uppercase tracking-widest text-[#86868B] mb-1 font-bold">Wind</div><div className="text-sm font-bold text-white">12 km/h NE</div></div>
+                     <div className="p-4 bg-white/[0.03] rounded-2xl border border-white/5 shadow-inner"><div className="text-[10px] uppercase tracking-widest text-[#86868B] mb-1 font-bold">Visibility</div><div className="text-sm font-bold text-white">Perfect</div></div>
+                  </div>
+                </div>
+
+                {/* Quick Actions */}
+                <div className="p-6 rounded-[32px] bg-gradient-to-br from-[#1C1C1E]/90 to-[#0A0A0A]/90 backdrop-blur-2xl border border-white/10 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.08)] flex flex-col justify-between">
+                  <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#86868B] mb-4">Quick Commands</h3>
+                  <div className="space-y-3">
+                    <button className="w-full p-4 rounded-2xl bg-gradient-to-r from-[#B08968] to-[#8C6D53] hover:from-[#C5A059] hover:to-[#B08968] text-[#050505] font-bold text-sm flex items-center justify-center gap-2 shadow-[0_15px_30px_rgba(176,137,104,0.4),inset_0_1px_0_rgba(255,255,255,0.3)] transition-all">
+                      <MapPinIcon className="w-5 h-5 drop-shadow-sm" /> Start Group Ride
+                    </button>
+                    <button className="w-full p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-all">
+                      <UserPlusIcon className="w-5 h-5" /> Invite Riders
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Trending Routes */}
+              <div>
+                <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#86868B] mb-6">Trending Routes Nearby</h3>
+                <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide snap-x">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="flex-shrink-0 w-72 h-40 rounded-[24px] bg-[#111111] border border-white/10 overflow-hidden relative group cursor-pointer snap-start shadow-lg">
+                      <div className="absolute inset-0 bg-[url('https://cartodb-basemaps-c.global.ssl.fastly.net/dark_all/12/2356/1572.png')] bg-cover opacity-50 group-hover:scale-105 transition-transform duration-700"></div>
+                      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+                      <div className="absolute bottom-4 left-4 right-4">
+                        <div className="flex justify-between items-end">
+                          <div>
+                            <h4 className="text-sm font-bold text-white drop-shadow-md">Coastal Highway Loop</h4>
+                            <p className="text-[10px] text-[#B08968] uppercase tracking-widest font-bold drop-shadow-md">120 km • Curvy</p>
+                          </div>
+                          <div className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 text-white">
+                            <ArrowUpIcon className="w-4 h-4 rotate-45" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </motion.div>
+          </div>
+        ) : (
+          // --- ACTIVE CHAT STATE ---
+          <div className="flex flex-col h-full bg-transparent">
+            
+            {/* Chat Header */}
+            <header className="h-24 flex-shrink-0 flex items-center justify-between px-8 bg-[#0A0A0A]/90 backdrop-blur-xl border-b border-white/5 z-20">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-full bg-slate-800 flex items-center justify-center border-2 border-[#1C1C1E]">
+                  <span className="font-bold text-slate-300 text-xl">{(activeChatEntity?.name || activeChatEntity?.username || 'U')[0].toUpperCase()}</span>
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    {activeChatEntity?.name || activeChatEntity?.username || 'Unknown'}
+                    {activeChatEntity?.online && <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]" />}
+                  </h2>
+                  <p className="text-xs text-[#86868B] uppercase tracking-widest">
+                    {selectedChat.type === 'dm' ? `${activeChatEntity?.bike || 'Rider'} • 2.4 km away` : `${activeChatEntity?.membersCount || 0} Members`}
                   </p>
                 </div>
               </div>
-
-              <div className="flex items-center space-x-2">
-                {selectedChat.type === 'community' && (
-                  <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
-                    <button
-                      onClick={() => setViewMode('chat')}
-                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                        viewMode === 'chat'
-                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                          : 'text-slate-600 dark:text-slate-400'
-                      }`}
-                    >
-                      <ChatBubbleLeftIcon className="w-3 h-3 inline mr-1" />
-                      Chat
-                    </button>
-                    <button
-                      onClick={() => setViewMode('feed')}
-                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                        viewMode === 'feed'
-                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                          : 'text-slate-600 dark:text-slate-400'
-                      }`}
-                    >
-                      <Squares2X2Icon className="w-3 h-3 inline mr-1" />
-                      Feed
-                    </button>
-                  </div>
-                )}
-                <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
-                  <VideoCameraIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+              <div className="flex items-center gap-2">
+                <button className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
+                  <PhoneIcon className="w-5 h-5 text-white" />
                 </button>
-                <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
-                  <EllipsisVerticalIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                <button className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
+                  <VideoCameraIcon className="w-5 h-5 text-white" />
+                </button>
+                <div className="w-px h-6 bg-white/10 mx-2"></div>
+                <button className="w-10 h-10 rounded-full bg-[#1C1C1E] hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
+                  <EllipsisVerticalIcon className="w-5 h-5 text-[#86868B]" />
                 </button>
               </div>
-            </div>
+            </header>
 
-            {/* Main Content Area */}
-            <div className="flex-1 overflow-y-auto">
-              {viewMode === 'chat' ? (
-                /* Direct Messages View */
-                <div className="p-6 space-y-4">
-                  {messages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full py-20">
-                      <div className="w-20 h-20 bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 rounded-2xl flex items-center justify-center mb-4 shadow-inner">
-                        <ChatBubbleOvalLeftEllipsisIcon className="w-10 h-10 text-slate-400 dark:text-slate-500" />
-                      </div>
-                      <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">Start the conversation</h3>
-                      <p className="text-sm text-slate-600 dark:text-slate-400 text-center max-w-sm leading-relaxed">
-                        Say hello to {selectedChat.data.name} and share your riding stories
-                      </p>
-                    </div>
-                  ) : (
-                    messages.map(msg => (
-                      <motion.div
-                        key={msg.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className={`flex ${msg.sender.id === user.id ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div className={`max-w-md rounded-2xl px-4 py-3 shadow-sm ${
-                          msg.sender.id === user.id
-                            ? 'bg-gradient-to-br from-cyan-500 to-blue-500 text-white shadow-cyan-500/20'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white'
-                        }`}>
-                          <p className="text-sm">{msg.content}</p>
-                          <p className={`text-xs mt-1 ${
-                            msg.sender.id === user.id ? 'text-cyan-100' : 'text-slate-500 dark:text-slate-400'
-                          }`}>
-                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                      </motion.div>
-                    ))
-                  )}
-                  <div ref={messagesEndRef} />
+            {/* Chat Messages Area */}
+            <div className="flex-1 overflow-y-auto scrollbar-hide p-8 space-y-6">
+              
+              {/* Fake historical messages for visual */}
+              <div className="flex flex-col items-center mb-8">
+                <div className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] uppercase tracking-widest text-[#86868B] font-bold">
+                  Today
                 </div>
-              ) : (
-                /* Community Feed View */
-                <div className="p-6 max-w-4xl mx-auto">
-                  {/* New Post Button */}
-                  <motion.button
-                    whileHover={{ scale: 1.01 }}
-                    whileTap={{ scale: 0.99 }}
-                    onClick={() => setShowNewPost(!showNewPost)}
-                    className="w-full p-4 mb-6 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white rounded-xl font-semibold transition-all flex items-center justify-center shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/40"
-                  >
-                    <PlusCircleIcon className="w-5 h-5 mr-2" />
-                    Share Your Story
-                  </motion.button>
+              </div>
 
-                  {/* New Post Form */}
-                  <AnimatePresence>
-                    {showNewPost && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="mb-6 bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800"
-                      >
-                        <textarea
-                          value={postInput}
-                          onChange={(e) => setPostInput(e.target.value)}
-                          placeholder="Share your experience, route tips, or ask the community..."
-                          className="w-full p-3 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-cyan-500 outline-none resize-none"
-                          rows="4"
-                        />
-                        <div className="flex items-center justify-between mt-3">
-                          <div className="flex space-x-2">
-                            <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
-                              <PhotoIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                            </button>
-                            <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
-                              <LinkIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                            </button>
-                            <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
-                              <MapPinIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                            </button>
-                          </div>
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => setShowNewPost(false)}
-                              className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-sm font-medium"
-                            >
-                              Cancel
-                            </button>
-                            <button className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors text-sm font-medium">
-                              Post
-                            </button>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+              <div className="flex gap-4">
+                <div className="w-8 h-8 rounded-full bg-slate-800 flex-shrink-0 mt-auto border border-white/10"></div>
+                <div className="max-w-[70%] bg-[#1C1C1E] text-white p-4 rounded-[24px] rounded-bl-sm border border-white/5 shadow-md">
+                  <p className="text-sm">Hey, are you joining the Sunday ride to the coastal highway?</p>
+                  <span className="text-[10px] text-[#86868B] mt-2 block">10:42 AM</span>
+                </div>
+              </div>
 
-                  {/* Posts Feed */}
-                  <div className="space-y-4">
-                    {posts.map(post => (
-                      <motion.div
-                        key={post.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden hover:border-cyan-500 dark:hover:border-cyan-500 transition-all"
-                      >
-                        {/* Post Header */}
-                        <div className="p-4 flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white font-bold">
-                              {post.author.name.charAt(0)}
-                            </div>
-                            <div>
-                              <div className="flex items-center space-x-1">
-                                <h4 className="font-medium text-slate-900 dark:text-white text-sm">{post.author.name}</h4>
-                                {post.author.verified && (
-                                  <ShieldCheckIcon className="w-4 h-4 text-cyan-500" />
-                                )}
-                              </div>
-                              <p className="text-xs text-slate-600 dark:text-slate-400">{post.timestamp} • {post.community}</p>
-                            </div>
-                          </div>
-                          {post.isPinned && (
-                            <div className="flex items-center space-x-1 px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded text-xs font-medium">
-                              <StarIcon className="w-3 h-3" />
-                              <span>Pinned</span>
-                            </div>
-                          )}
-                        </div>
+              <div className="flex gap-4 justify-end">
+                <div className="max-w-[70%] bg-gradient-to-br from-[#B08968] to-[#8C6D53] text-[#050505] p-4 rounded-[24px] rounded-br-sm shadow-[0_10px_20px_rgba(176,137,104,0.2)]">
+                  <p className="text-sm font-medium">Absolutely! I just got my bike serviced. Where are we meeting?</p>
+                  <span className="text-[10px] text-[#050505]/60 mt-2 block text-right font-bold">10:45 AM</span>
+                </div>
+              </div>
 
-                        {/* Post Content */}
-                        <div className="px-4 pb-4">
-                          <h3 className="font-semibold text-slate-900 dark:text-white mb-2">{post.title}</h3>
-                          <p className="text-slate-700 dark:text-slate-300 text-sm mb-3">{post.content}</p>
-                          
-                          {post.media && (
-                            <div className="rounded-lg overflow-hidden mb-3">
-                              <img src={post.media.url} alt="" className="w-full h-64 object-cover" />
-                            </div>
-                          )}
-
-                          {/* Tags */}
-                          <div className="flex flex-wrap gap-2 mb-3">
-                            {post.tags.map(tag => (
-                              <span key={tag} className="px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded text-xs">
-                                #{tag}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Post Actions */}
-                        <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between border-t border-slate-200 dark:border-slate-800">
-                          <div className="flex items-center space-x-4">
-                            <button
-                              onClick={() => handleUpvote(post.id)}
-                              className="flex items-center space-x-1 text-slate-600 dark:text-slate-400 hover:text-cyan-500 transition-colors"
-                            >
-                              <ArrowUpIcon className="w-5 h-5" />
-                              <span className="text-sm font-medium">{post.upvotes}</span>
-                            </button>
-                            <button
-                              onClick={() => handleDownvote(post.id)}
-                              className="flex items-center space-x-1 text-slate-600 dark:text-slate-400 hover:text-red-500 transition-colors"
-                            >
-                              <ArrowDownIcon className="w-5 h-5" />
-                            </button>
-                            <button
-                              onClick={() => setSelectedPost(post)}
-                              className="flex items-center space-x-1 text-slate-600 dark:text-slate-400 hover:text-cyan-500 transition-colors"
-                            >
-                              <ChatBubbleOvalLeftEllipsisIcon className="w-5 h-5" />
-                              <span className="text-sm font-medium">{post.comments}</span>
-                            </button>
-                          </div>
-                          <button className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors">
-                            <FlagIcon className="w-4 h-4 text-slate-400" />
-                          </button>
-                        </div>
-                      </motion.div>
-                    ))}
+              {messages.map((msg, idx) => {
+                 const isMe = msg.sender?.id === user?.id || msg.sender === user?.id;
+                 return (
+                  <div key={idx} className={`flex gap-4 ${isMe ? 'justify-end' : ''}`}>
+                    {!isMe && <div className="w-8 h-8 rounded-full bg-slate-800 flex-shrink-0 mt-auto border border-white/10"></div>}
+                    <div className={`max-w-[70%] p-4 rounded-[24px] shadow-md ${isMe ? 'bg-gradient-to-br from-[#B08968] to-[#8C6D53] text-[#050505] rounded-br-sm' : 'bg-[#1C1C1E] text-white rounded-bl-sm border border-white/5'}`}>
+                      <p className={`text-sm ${isMe ? 'font-medium' : ''}`}>{msg.content}</p>
+                    </div>
+                  </div>
+                 )
+              })}
+              
+              {isPeerTyping && (
+                <div className="flex gap-4 items-center">
+                  <div className="w-8 h-8 rounded-full bg-slate-800 flex-shrink-0 border border-white/10"></div>
+                  <div className="bg-[#1C1C1E] px-4 py-3 rounded-full border border-white/5 flex gap-1 items-center h-10">
+                    <span className="w-1.5 h-1.5 bg-[#86868B] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                    <span className="w-1.5 h-1.5 bg-[#86868B] rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                    <span className="w-1.5 h-1.5 bg-[#86868B] rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
                   </div>
                 </div>
               )}
+              
+              <div ref={messagesEndRef} />
             </div>
 
-            {/* Message Input (for DM mode) */}
-            {viewMode === 'chat' && (
-              <div className="border-t border-slate-200 dark:border-slate-800 p-4 bg-white dark:bg-slate-900">
-                <div className="flex items-center space-x-3">
-                  <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
-                    <PhotoIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                  </button>
-                  <input
-                    type="text"
-                    value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder="Type a message..."
-                    className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none"
-                  />
-                  <button
-                    onClick={handleSendMessage}
-                    className="p-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors"
-                  >
-                    <PaperAirplaneIcon className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
-          /* Empty State */
-          <div className="flex-1 flex flex-col items-center justify-center p-8">
-            <div className="w-28 h-28 bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-500 rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-cyan-500/30">
-              <UserGroupIcon className="w-14 h-14 text-white" />
-            </div>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Your Riding Community</h2>
-            <p className="text-slate-600 dark:text-slate-400 text-center max-w-md mb-8 leading-relaxed">
-              Connect with riders, share experiences, and discover new routes together
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setActiveTab('friends')}
-                className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white rounded-xl font-semibold transition-all shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/40"
-              >
-                Find Riders
-              </button>
-              <button
-                onClick={() => setActiveTab('communities')}
-                className="px-6 py-3 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-xl font-semibold transition-all shadow-sm hover:shadow-md"
-              >
-                Explore Communities
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* RIGHT PANEL - Context & Intelligence */}
-      <div className="w-80 border-l border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 overflow-y-auto h-full">
-        {selectedChat ? (
-          <div className="p-4">
-            {selectedChat.type === 'dm' ? (
-              /* Rider Profile Preview */
-              <div>
-                <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-4">
-                  Profile
-                </h3>
-                <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-800/50 rounded-2xl p-5 mb-4 border border-slate-200 dark:border-slate-700 shadow-sm">
-                  <div className="flex flex-col items-center mb-5">
-                    <div className="w-24 h-24 bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold text-3xl mb-3 shadow-lg shadow-cyan-500/30">
-                      {selectedChat.data.name.charAt(0)}
-                    </div>
-                    <h4 className="font-bold text-slate-900 dark:text-white text-lg mb-1">{selectedChat.data.name}</h4>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">{selectedChat.data.city}</p>
-                  </div>
-                  
-                  <div className="space-y-3 mb-5">
-                    <div className="flex items-center space-x-3 text-sm p-2.5 rounded-lg bg-slate-50 dark:bg-slate-700/50">
-                      <GlobeAltIcon className="w-4 h-4 text-cyan-500 flex-shrink-0" />
-                      <span className="text-slate-700 dark:text-slate-300 font-medium">{selectedChat.data.bike}</span>
-                    </div>
-                    <div className="flex items-center space-x-3 text-sm p-2.5 rounded-lg bg-slate-50 dark:bg-slate-700/50">
-                      <MapPinIcon className="w-4 h-4 text-cyan-500 flex-shrink-0" />
-                      <span className="text-slate-700 dark:text-slate-300 font-medium">{selectedChat.data.city}</span>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t border-slate-200 dark:border-slate-700/50 space-y-2">
-                    <button className="w-full px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white rounded-xl text-sm font-semibold transition-all shadow-md shadow-cyan-500/20 hover:shadow-cyan-500/30">
-                      View Profile
-                    </button>
-                    <button className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-600/50 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-medium transition-all">
-                      Block
-                    </button>
-                  </div>
-                </div>
-
-                {/* Shared Communities */}
-                <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-800/50 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
-                  <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Shared Communities</h4>
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2 text-xs">
-                      <div className="w-6 h-6 bg-gradient-to-br from-purple-400 to-pink-500 rounded flex items-center justify-center">🏍️</div>
-                      <span className="text-slate-700 dark:text-slate-300">Delhi Riders Club</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* Community Info */
-              <div>
-                <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-4">
-                  Community Info
-                </h3>
+            {/* Premium Input Dock */}
+            <div className="p-6 pt-0 bg-gradient-to-t from-[#050505] via-[#050505] to-transparent">
+              <div className="max-w-4xl mx-auto flex items-end gap-3 p-2 bg-[#1C1C1E]/80 backdrop-blur-2xl border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.05)] rounded-[32px]">
                 
-                <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-800/50 rounded-2xl p-5 mb-4 border border-slate-200 dark:border-slate-700 shadow-sm">
-                  <div className="flex items-center space-x-3 mb-4">
-                    <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-pink-500 rounded-lg flex items-center justify-center text-3xl">
-                      {selectedChat.data.avatar}
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-slate-900 dark:text-white">{selectedChat.data.name}</h4>
-                      <p className="text-xs text-slate-600 dark:text-slate-400">{selectedChat.data.members.toLocaleString()} members</p>
-                    </div>
-                  </div>
+                <button className="w-10 h-10 flex-shrink-0 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
+                  <PlusCircleIcon className="w-5 h-5 text-[#86868B]" />
+                </button>
+                <button className="w-10 h-10 flex-shrink-0 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
+                  <PhotoIcon className="w-5 h-5 text-[#86868B]" />
+                </button>
+                
+                <input
+                  type="text"
+                  value={messageInput}
+                  onChange={(e) => {
+                    setMessageInput(e.target.value)
+                    sendTypingStatus(selectedChat?.id)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                       if (messageInput.trim()) {
+                         sendMessage(selectedChat?.id, messageInput, selectedChat?.type)
+                         setMessageInput('')
+                       }
+                    }
+                  }}
+                  placeholder="Transmit message..."
+                  className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder:text-[#86868B] py-3 px-2"
+                />
 
-                  <div className="space-y-2 mb-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-600 dark:text-slate-400">Type</span>
-                      <span className="text-slate-900 dark:text-white capitalize">{selectedChat.data.type}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-600 dark:text-slate-400">Verified</span>
-                      <span className="text-slate-900 dark:text-white">{selectedChat.data.verified ? 'Yes' : 'No'}</span>
-                    </div>
-                  </div>
-
-                  <button className="w-full px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-semibold transition-all shadow-md shadow-red-500/20 hover:shadow-red-500/30">
-                    Leave Community
+                {messageInput.trim() ? (
+                  <button 
+                    onClick={() => {
+                      sendMessage(selectedChat?.id, messageInput, selectedChat?.type)
+                      setMessageInput('')
+                    }}
+                    className="w-10 h-10 flex-shrink-0 rounded-full bg-gradient-to-r from-[#B08968] to-[#8C6D53] flex items-center justify-center transition-all shadow-[0_0_15px_rgba(176,137,104,0.4)]"
+                  >
+                    <ArrowUpIcon className="w-5 h-5 text-[#050505]" />
                   </button>
-                </div>
-
-                {/* Community Rules */}
-                <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-800/50 rounded-2xl p-5 mb-4 border border-slate-200 dark:border-slate-700 shadow-sm">
-                  <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Community Rules</h4>
-                  <ul className="space-y-2 text-xs text-slate-700 dark:text-slate-300">
-                    <li className="flex items-start">
-                      <span className="text-cyan-500 mr-2">•</span>
-                      Be respectful to all members
-                    </li>
-                    <li className="flex items-start">
-                      <span className="text-cyan-500 mr-2">•</span>
-                      No spam or self-promotion
-                    </li>
-                    <li className="flex items-start">
-                      <span className="text-cyan-500 mr-2">•</span>
-                      Share accurate safety information
-                    </li>
-                    <li className="flex items-start">
-                      <span className="text-cyan-500 mr-2">•</span>
-                      Keep posts relevant to riding
-                    </li>
-                  </ul>
-                </div>
-
-                {/* Trending Posts */}
-                <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-800/50 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
-                  <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
-                    <BoltIcon className="w-4 h-4 mr-1 text-amber-500" />
-                    Trending
-                  </h4>
-                  <div className="space-y-3">
-                    <div className="pb-2 border-b border-slate-200 dark:border-slate-700 last:border-0">
-                      <p className="text-xs font-medium text-slate-900 dark:text-white mb-1">Best monsoon gear?</p>
-                      <p className="text-xs text-slate-600 dark:text-slate-400">45 upvotes</p>
-                    </div>
-                    <div className="pb-2 border-b border-slate-200 dark:border-slate-700 last:border-0">
-                      <p className="text-xs font-medium text-slate-900 dark:text-white mb-1">Road closure update - NH44</p>
-                      <p className="text-xs text-slate-600 dark:text-slate-400">38 upvotes</p>
-                    </div>
-                  </div>
-                </div>
+                ) : (
+                  <button className="w-10 h-10 flex-shrink-0 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
+                    <ChatBubbleOvalLeftEllipsisIcon className="w-5 h-5 text-[#86868B]" />
+                  </button>
+                )}
+                
               </div>
-            )}
-          </div>
-        ) : (
-          /* AI Assistant Placeholder */
-          <div className="p-6">
-            <div className="bg-gradient-to-br from-cyan-500 via-blue-500 to-purple-600 rounded-2xl p-8 text-white text-center shadow-xl shadow-cyan-500/30">
-              <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <BoltIcon className="w-8 h-8" />
-              </div>
-              <h3 className="font-bold text-lg mb-2">AI Insights</h3>
-              <p className="text-sm text-white/90 leading-relaxed">
-                Select a conversation to get intelligent summaries and community insights
-              </p>
             </div>
+
           </div>
         )}
       </div>
 
-      {/* Group Creation Modal */}
-      <AnimatePresence>
-        {showGroupModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setShowGroupModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full max-h-[90vh] overflow-hidden"
-            >
-              {/* Modal Header */}
-              <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Create Group</h3>
-                <button
-                  onClick={() => setShowGroupModal(false)}
-                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                >
-                  <XMarkIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                </button>
-              </div>
+      {/* ========================================= */}
+      {/* RIGHT SIDEBAR: RIDE INTELLIGENCE */}
+      {/* ========================================= */}
+      {selectedChat && selectedChat.type === 'dm' && (
+        <div className="hidden lg:flex w-80 flex-shrink-0 flex-col bg-[#0A0A0A]/90 backdrop-blur-2xl border-l border-white/5 relative z-10 overflow-y-auto scrollbar-hide">
+          <div className="p-8">
+            <div className="w-24 h-24 mx-auto rounded-full bg-gradient-to-br from-[#1C1C1E] to-[#121212] border border-white/10 shadow-lg flex items-center justify-center mb-4">
+               <span className="font-bold text-slate-300 text-3xl">{(activeChatEntity?.name || activeChatEntity?.username || 'U')[0].toUpperCase()}</span>
+            </div>
+            <h2 className="text-xl font-bold text-white text-center">{activeChatEntity?.name || activeChatEntity?.username}</h2>
+            <p className="text-xs text-[#86868B] text-center uppercase tracking-widest mt-1 mb-8">{activeChatEntity?.bike || 'Rider'}</p>
 
-              {/* Modal Body */}
-              <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
-                <div className="space-y-4">
-                  {/* Group Name */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Group Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={groupData.name}
-                      onChange={(e) => setGroupData(prev => ({ ...prev, name: e.target.value }))}
-                      placeholder="e.g., Weekend Ride Squad"
-                      className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white"
-                    />
+            <div className="space-y-4">
+              
+              <div className="p-5 rounded-[24px] bg-gradient-to-b from-[#1C1C1E]/80 to-[#0A0A0A]/90 border border-white/10 shadow-[0_8px_16px_rgba(0,0,0,0.5)]">
+                <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#86868B] mb-4">Ride Compatibility</h3>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 rounded-full bg-[#B08968]/20 flex items-center justify-center border border-[#B08968]/30">
+                    <UsersIcon className="w-4 h-4 text-[#B08968]" />
                   </div>
-
-                  {/* Description */}
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Description
-                    </label>
-                    <textarea
-                      value={groupData.description}
-                      onChange={(e) => setGroupData(prev => ({ ...prev, description: e.target.value }))}
-                      placeholder="What's this group about?"
-                      rows="3"
-                      className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none resize-none text-slate-900 dark:text-white"
-                    />
+                    <div className="text-sm font-bold text-white">4 Mutual Friends</div>
                   </div>
-
-                  {/* Group Type */}
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
+                    <MapIcon className="w-4 h-4 text-[#86868B]" />
+                  </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Group Type
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        onClick={() => setGroupData(prev => ({ ...prev, type: 'private' }))}
-                        className={`p-3 rounded-lg border-2 transition-all ${
-                          groupData.type === 'private'
-                            ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20'
-                            : 'border-slate-300 dark:border-slate-700 hover:border-cyan-300'
-                        }`}
-                      >
-                        <h4 className="font-semibold text-slate-900 dark:text-white text-sm mb-1">Private</h4>
-                        <p className="text-xs text-slate-600 dark:text-slate-400">Only invited members</p>
-                      </button>
-                      <button
-                        onClick={() => setGroupData(prev => ({ ...prev, type: 'public' }))}
-                        className={`p-3 rounded-lg border-2 transition-all ${
-                          groupData.type === 'public'
-                            ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20'
-                            : 'border-slate-300 dark:border-slate-700 hover:border-cyan-300'
-                        }`}
-                      >
-                        <h4 className="font-semibold text-slate-900 dark:text-white text-sm mb-1">Public</h4>
-                        <p className="text-xs text-slate-600 dark:text-slate-400">Anyone can join</p>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Optional Tags */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                        City (optional)
-                      </label>
-                      <input
-                        type="text"
-                        value={groupData.city}
-                        onChange={(e) => setGroupData(prev => ({ ...prev, city: e.target.value }))}
-                        placeholder="Delhi, Mumbai..."
-                        className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                        Route (optional)
-                      </label>
-                      <input
-                        type="text"
-                        value={groupData.route}
-                        onChange={(e) => setGroupData(prev => ({ ...prev, route: e.target.value }))}
-                        placeholder="Leh-Ladakh..."
-                        className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Invite Friends */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Invite Friends (optional)
-                    </label>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {friends.map(friend => (
-                        <button
-                          key={friend.id}
-                          onClick={() => toggleMemberSelection(friend.id)}
-                          className={`w-full p-3 rounded-lg flex items-center justify-between transition-all ${
-                            groupData.selectedMembers.includes(friend.id)
-                              ? 'bg-cyan-50 dark:bg-cyan-900/20 ring-2 ring-cyan-500'
-                              : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700'
-                          }`}
-                        >
-                          <div className="flex items-center space-x-3">
-                            <div className="w-8 h-8 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                              {friend.name.charAt(0)}
-                            </div>
-                            <span className="text-sm font-medium text-slate-900 dark:text-white">{friend.name}</span>
-                          </div>
-                          {groupData.selectedMembers.includes(friend.id) && (
-                            <CheckIcon className="w-5 h-5 text-cyan-500" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
+                    <div className="text-sm font-bold text-white">1 Shared Trip</div>
                   </div>
                 </div>
               </div>
 
-              {/* Modal Footer */}
-              <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                <p className="text-sm text-slate-600 dark:text-slate-400">
-                  {groupData.selectedMembers.length} members selected
-                </p>
-                <div className="flex space-x-3">
-                  <button
-                    onClick={() => setShowGroupModal(false)}
-                    className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={createGroup}
-                    disabled={!groupData.name.trim()}
-                    className="px-6 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
-                  >
-                    Create Group
-                  </button>
-                </div>
+              <div className="p-5 rounded-[24px] bg-gradient-to-b from-[#1C1C1E]/80 to-[#0A0A0A]/90 border border-white/10 shadow-[0_8px_16px_rgba(0,0,0,0.5)]">
+                 <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#86868B] mb-4">Quick Actions</h3>
+                 <div className="space-y-2">
+                   <button className="w-full p-3 rounded-xl bg-white/5 hover:bg-white/10 text-white text-sm font-medium flex items-center gap-3 transition-colors">
+                     <MapPinIcon className="w-4 h-4 text-[#B08968]" /> Share Live Location
+                   </button>
+                   <button className="w-full p-3 rounded-xl bg-white/5 hover:bg-white/10 text-white text-sm font-medium flex items-center gap-3 transition-colors">
+                     <SparklesIcon className="w-4 h-4 text-[#B08968]" /> AI Ride Summary
+                   </button>
+                   <button className="w-full p-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 text-sm font-medium flex items-center gap-3 transition-colors border border-red-500/20">
+                     <ShieldExclamationIcon className="w-4 h-4" /> Emergency Protocol
+                   </button>
+                 </div>
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
 
-export default Chat
+export default Chat;

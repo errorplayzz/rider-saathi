@@ -32,7 +32,12 @@ export const friendsAPI = {
 
   // Send friend request
   sendFriendRequest: async (userId, message) => {
-    const { data } = await api.post('/friends/request', { userId, message })
+    const { data } = await api.post('/friends/request', {
+      // Keep both keys for backward compatibility with older/newer backend handlers.
+      receiverId: userId,
+      userId,
+      message
+    })
     return data
   },
 
@@ -76,6 +81,12 @@ export const friendsAPI = {
   getNearbyRiders: async (latitude, longitude, radius = 5000) => {
     const { data } = await api.get(`/friends/nearby?latitude=${latitude}&longitude=${longitude}&radius=${radius}`)
     return data
+  },
+
+  // Search riders by unique username
+  searchByUsername: async (username) => {
+    const { data } = await api.get(`/friends/search?username=${encodeURIComponent(username)}`)
+    return data
   }
 }
 
@@ -112,6 +123,18 @@ export const messagesAPI = {
   // Mark message as read
   markAsRead: async (messageId) => {
     const { data } = await api.put(`/messages/${messageId}/read`)
+    return data
+  },
+
+  // Mark message as delivered
+  markAsDelivered: async (messageId) => {
+    const { data } = await api.put(`/messages/${messageId}/delivered`)
+    return data
+  },
+
+  // Mark all unread messages in a conversation as read
+  markConversationRead: async (userId) => {
+    const { data } = await api.put(`/messages/conversation/${userId}/read`)
     return data
   },
 
@@ -155,6 +178,15 @@ export const groupsAPI = {
   getGroupMessages: async (groupId, page = 1) => {
     const { data } = await api.get(`/groups/${groupId}/messages`, {
       params: { page }
+    })
+    return data
+  },
+
+  // Send message to group
+  sendGroupMessage: async (groupId, content, contentType = 'text') => {
+    const { data } = await api.post(`/groups/${groupId}/messages`, {
+      content,
+      contentType
     })
     return data
   },
@@ -263,7 +295,7 @@ export const postsAPI = {
 
   // React to post
   reactToPost: async (postId, reactionType) => {
-    const { data } = await api.post(`/posts/${postId}/react`, { reactionType })
+    const { data } = await api.post(`/posts/${postId}/react`, { type: reactionType })
     return data
   },
 

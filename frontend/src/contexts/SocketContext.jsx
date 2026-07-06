@@ -158,8 +158,21 @@ export const SocketProvider = ({ children }) => {
       window.dispatchEvent(new CustomEvent('battery-alert', { detail: payload }))
     }).subscribe()
 
+    const emergencyBroadcastChannel = supabase.channel('emergency-broadcasts')
+    emergencyBroadcastChannel
+      .on('broadcast', { event: 'emergency-alert' }, (payload) => {
+        window.dispatchEvent(new CustomEvent('emergency-alert', { detail: payload }))
+      })
+      .on('broadcast', { event: 'alert-resolved' }, (payload) => {
+        window.dispatchEvent(new CustomEvent('alert-resolved', { detail: payload }))
+      })
+      .on('broadcast', { event: 'responder-joined' }, (payload) => {
+        window.dispatchEvent(new CustomEvent('responder-joined', { detail: payload }))
+      })
+      .subscribe()
+
     // Keep reference to channels so they can be cleaned up on unmount
-    const cleanupChannels = [presenceChannel, locChannel, rideChannel, batteryChannel]
+    const cleanupChannels = [presenceChannel, locChannel, rideChannel, batteryChannel, emergencyBroadcastChannel]
 
     // Cleanup on unmount
     return () => {
@@ -186,9 +199,43 @@ export const SocketProvider = ({ children }) => {
     if (!socketIO.hasListeners('new-message')) {
       socketIO.on('new-message', (messageData) => {
         console.log('New message received:', messageData)
+        const roomId = messageData?.room || messageData?.chatId || messageData?.roomId
+        const normalizedMessage = messageData?.message || messageData
         // Dispatch custom event for chat components to listen
         window.dispatchEvent(new CustomEvent('new-message', {
-          detail: { roomId: messageData.room, message: messageData }
+          detail: { roomId, message: normalizedMessage }
+        }))
+      })
+    }
+
+    if (!socketIO.hasListeners('direct-message')) {
+      socketIO.on('direct-message', (payload) => {
+        window.dispatchEvent(new CustomEvent('direct-message', {
+          detail: payload
+        }))
+      })
+    }
+
+    if (!socketIO.hasListeners('message-status-update')) {
+      socketIO.on('message-status-update', (payload) => {
+        window.dispatchEvent(new CustomEvent('message-status-update', {
+          detail: payload
+        }))
+      })
+    }
+
+    if (!socketIO.hasListeners('message-status-batch-update')) {
+      socketIO.on('message-status-batch-update', (payload) => {
+        window.dispatchEvent(new CustomEvent('message-status-batch-update', {
+          detail: payload
+        }))
+      })
+    }
+
+    if (!socketIO.hasListeners('typing-indicator')) {
+      socketIO.on('typing-indicator', (payload) => {
+        window.dispatchEvent(new CustomEvent('typing-indicator', {
+          detail: payload
         }))
       })
     }
@@ -223,6 +270,13 @@ export const SocketProvider = ({ children }) => {
     socketIO.emit('send-message', messageData)
     return true
   }, [user, socketIO])
+
+  const sendTypingStatus = useCallback((targetUserId, isTyping) => {
+    if (!targetUserId || !socketIO || !socketIO.connected) return
+    socketIO.emit(isTyping ? 'typing-start' : 'typing-stop', {
+      targetUserId
+    })
+  }, [socketIO])
 
   // Update location
   const updateLocation = useCallback(async (location) => {
@@ -275,6 +329,7 @@ export const SocketProvider = ({ children }) => {
   // Provide a small socket-like API backed by window events so components can call socket.on/off
   const supabaseSocket = React.useMemo(() => {
     return {
+      connected: connected,
       on: (event, cb) => {
         if (!event || typeof cb !== 'function') return
         const handler = (e) => cb(e.detail)
@@ -298,42 +353,77 @@ export const SocketProvider = ({ children }) => {
         } catch (e) {
           console.error('Failed to send ride event:', e)
         }
+      },
+      emit: (event, payload = {}) => {
+        // Keep legacy socket.emit API working for pages that were written for Socket.IO.
+        const send = async (channelName, broadcastEvent, broadcastPayload) => {
+          try {
+            const channel = supabase.channel(channelName)
+            await channel.send({
+              type: 'broadcast',
+              event: broadcastEvent,
+              payload: broadcastPayload
+            })
+          } catch (e) {
+            console.error(`Failed to emit ${broadcastEvent} on ${channelName}:`, e)
+          }
+        }
+
+        if (event === 'ride-start' || event === 'ride-end' || event === 'share-change') {
+          void send('ride-events', event, payload)
+          return
+        }
+
+        if (event === 'battery-alert') {
+          void send('battery-alerts', 'battery-alert', payload)
+          return
+        }
+
+        if (event === 'emergency-alert' || event === 'alert-resolved' || event === 'responder-joined') {
+          void send('emergency-broadcasts', event, payload)
+          return
+        }
+
+        if (event === 'location-update' || event === 'location:update') {
+          const normalizedLocation = {
+            latitude: payload.latitude ?? payload.lat,
+            longitude: payload.longitude ?? payload.lng,
+            address: payload.address,
+            speed: payload.speed,
+            heading: payload.heading
+          }
+
+          if (normalizedLocation.latitude != null && normalizedLocation.longitude != null) {
+            void updateLocation(normalizedLocation)
+          }
+          return
+        }
       }
     }
-  }, [])
+  }, [connected, updateLocation])
 
   // Send emergency alert
   const sendEmergencyAlert = useCallback(async (alertData) => {
     if (!user) return
 
     try {
-      // Use backend API instead of direct Supabase
-      const token = localStorage.getItem('token')
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5001/api'}/emergency/alert`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          type: alertData.type,
-          severity: alertData.severity,
-          location: {
-            latitude: alertData.location.latitude,
-            longitude: alertData.location.longitude,
-            address: alertData.location.address
-          },
-          description: alertData.description
-        })
+      const alert = await createEmergencyAlertHelper(
+        user.id,
+        alertData.type,
+        alertData.severity,
+        alertData.location,
+        alertData.description
+      )
+
+      // Broadcast through Supabase realtime so all listeners get instant updates.
+      const channel = supabase.channel('emergency-broadcasts')
+      await channel.send({
+        type: 'broadcast',
+        event: 'emergency-alert',
+        payload: alert
       })
 
-      if (!response.ok) {
-        throw new Error(`Emergency alert failed: ${response.status}`)
-      }
-
-      const alert = await response.json()
-      
-      // Emit via Socket.IO for realtime updates
+      // Keep Socket.IO event in place for screens still attached to server sockets.
       if (socketIO && socketIO.connected) {
         socketIO.emit('emergency-alert', alert)
       }
@@ -437,12 +527,13 @@ export const SocketProvider = ({ children }) => {
     sendEmergencyAlert,
     subscribeToEmergencyAlerts,
     sendMessage,
+    sendTypingStatus,
     joinChatRoom,
     leaveChatRoom,
     sendBatteryAlert,
     sendHelperAlert,
-    // Real Socket.IO connection for map tracking
-    socket: socketIO,
+    // Prefer backend Socket.IO when available; fallback keeps legacy pages functional via Supabase.
+    socket: socketIO || supabaseSocket,
     // Legacy Supabase compatibility
     supabaseSocket: supabaseSocket
   }
