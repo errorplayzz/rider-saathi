@@ -295,6 +295,10 @@ router.get('/listings', protect, async (req, res) => {
 
 router.post('/listings', protect, async (req, res) => {
   try {
+    const user = await User.findById(req.user._id);
+    if (!user || !user.isVerified) {
+      return res.status(403).json({ success: false, error: 'Only verified users can create marketplace listings.' });
+    }
     const {
       title,
       description,

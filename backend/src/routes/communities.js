@@ -3,6 +3,7 @@ import { protect } from '../middleware/auth.js';
 import Community from '../models/Community.js';
 import Post from '../models/Post.js';
 import User from '../models/User.js';
+import { censorText } from '../utils/moderation.js';
 
 const router = express.Router();
 
@@ -16,8 +17,8 @@ router.post('/', protect, async (req, res) => {
     }
 
     const community = await Community.create({
-      name,
-      description,
+      name: censorText(name),
+      description: description ? censorText(description) : undefined,
       type,
       visibility,
       state,
@@ -194,11 +195,11 @@ router.put('/:communityId', protect, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Community not found' });
     }
 
-    if (!community.isModerator(req.user._id)) {
-      return res.status(403).json({ success: false, error: 'Only moderators can update community' });
+    if (!community.isModerator(req.user._id) && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Only moderators or admins can update community' });
     }
 
-    if (description) community.description = description;
+    if (description) community.description = censorText(description);
     if (rules) community.rules = rules;
     if (settings) community.settings = { ...community.settings, ...settings };
     if (avatar) community.avatar = avatar;

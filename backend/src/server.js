@@ -6,6 +6,8 @@ import helmet from 'helmet'
 import morgan from 'morgan'
 import compression from 'compression'
 import rateLimit from 'express-rate-limit'
+import mongoSanitize from 'express-mongo-sanitize'
+import xss from 'xss-clean'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import dotenv from 'dotenv'
@@ -47,6 +49,9 @@ import { handleSocketConnection } from './services/socketService.js'
 
 const app = express()
 const server = createServer(app)
+
+// Trust proxy for rate limiters behind reverse proxies (like Vercel, Nginx)
+app.set('trust proxy', 1)
 
 // CORS configuration
 const allowedOrigins = process.env.NODE_ENV === 'production' 
@@ -110,13 +115,23 @@ const authLimiter = rateLimit({
 })
 
 // Middleware
-app.use(helmet())
+// Strengthen HTTP headers
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false
+}))
 app.use(cors(corsOptions))
 app.use(compression())
 app.use(morgan('combined'))
 app.use(limiter)
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
+
+// Data Sanitization against NoSQL Query Injection
+app.use(mongoSanitize())
+
+// Data Sanitization against XSS
+app.use(xss())
 
 // Serve uploaded files (avatars, etc.)
 const uploadsDir = path.join(process.cwd(), 'uploads')
@@ -160,7 +175,7 @@ app.use((req, res, next) => {
 })
 
 // API Routes
-app.use('/api/auth', authLimiter, authRoutes) // Separate rate limiter for auth
+app.use('/api/auth', authRoutes)
 app.use('/api/gps', gpsRoutes)
 app.use('/api/emergency', emergencyRoutes)
 app.use('/api/weather', weatherRoutes)

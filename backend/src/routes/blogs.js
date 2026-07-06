@@ -539,8 +539,8 @@ router.put('/:id', [
       })
     }
 
-    // Check if user is author
-    if (blog.author.id !== req.user.id) {
+    // Check if user is author or admin/moderator
+    if (blog.author.id !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'moderator') {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to edit this blog'
@@ -628,8 +628,8 @@ router.delete('/:id', auth, async (req, res) => {
       })
     }
 
-    // Check if user is author
-    if (blog.author.id !== req.user.id) {
+    // Check if user is author or admin/moderator
+    if (blog.author.id !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'moderator') {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to delete this blog'

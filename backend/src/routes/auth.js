@@ -5,10 +5,22 @@ import jwt from 'jsonwebtoken'
 import mongoose from 'mongoose'
 import speakeasy from 'speakeasy'
 import qrcode from 'qrcode'
+import crypto from 'crypto'
+import rateLimit from 'express-rate-limit'
 import User from '../models/User.js'
 import { auth } from '../middleware/auth.js'
 
 const router = express.Router()
+
+// Rate limiting for auth routes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // limit each IP to 10 requests per windowMs
+  message: {
+    success: false,
+    message: 'Too many requests from this IP, please try again after 15 minutes'
+  }
+})
 
 // Multer setup for avatar uploads
 const storage = multer.diskStorage({
@@ -43,7 +55,7 @@ const demoEmergencyContacts = new Map()
 // Generate JWT token
 const generateToken = (userId) => {
   return jwt.sign({ userId }, JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || '7d'
+    expiresIn: process.env.JWT_EXPIRE || '12h'
   })
 }
 
@@ -79,7 +91,7 @@ router.get('/check-username/:username', async (req, res) => {
 // @route   POST /api/auth/register
 // @desc    Register a new user
 // @access  Public
-router.post('/register', async (req, res) => {
+router.post('/register', authLimiter, async (req, res) => {
   try {
     const { name, email, password, phone, bikeDetails, username, state } = req.body
     const normalizedUsername = (username || '').toLowerCase().trim()
@@ -152,7 +164,7 @@ router.post('/register', async (req, res) => {
 // @route   POST /api/auth/login
 // @desc    Login user
 // @access  Public
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body
 
@@ -534,7 +546,7 @@ router.put('/settings', auth, async (req, res) => {
 })
 
 // @route   DELETE /api/auth/account
-// @desc    Delete user account
+// @desc    Delete user account (Cascade delete associated data)
 // @access  Private
 router.delete('/account', auth, async (req, res) => {
   try {
@@ -543,44 +555,140 @@ router.delete('/account', auth, async (req, res) => {
       return res.json({ success: true, message: 'Account deleted (demo mode)' })
     }
 
-    // Remove user and any related data (minimal implementation)
-    await User.findByIdAndDelete(req.user.id)
+    // Cascade delete associated data (GDPR Right to Erasure)
+    const userId = req.user.id;
+    
+    // Dynamic import to prevent circular dependencies if they exist
+    const EmergencyAlert = (await import('../models/EmergencyAlert.js')).default;
+    const Blog = (await import('../models/Blog.js')).default;
+    const MarketplaceListing = (await import('../models/MarketplaceListing.js')).default;
+    const Message = (await import('../models/Message.js')).default;
+    
+    if (EmergencyAlert) await EmergencyAlert.deleteMany({ user: userId });
+    if (Blog) await Blog.deleteMany({ author: userId });
+    if (MarketplaceListing) await MarketplaceListing.deleteMany({ 'provider.user': userId });
+    if (Message) await Message.deleteMany({ $or: [{ sender: userId }, { recipient: userId }] });
 
-    res.json({ success: true, message: 'Account deleted successfully' })
+    // Remove user
+    await User.findByIdAndDelete(userId)
+
+    res.json({ success: true, message: 'Account and associated data deleted successfully' })
   } catch (error) {
     console.error('Account deletion error:', error)
     res.status(500).json({ success: false, message: 'Failed to delete account', error: error.message })
   }
 })
 
+// @route   GET /api/auth/export-data
+// @desc    Export all user data (GDPR Right to Data Portability)
+// @access  Private
+router.get('/export-data', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    
+    const EmergencyAlert = (await import('../models/EmergencyAlert.js')).default;
+    const alerts = EmergencyAlert ? await EmergencyAlert.find({ user: req.user.id }) : [];
+    
+    res.setHeader('Content-disposition', 'attachment; filename=userdata.json');
+    res.setHeader('Content-type', 'application/json');
+    
+    const exportData = {
+      profile: user,
+      alerts
+    };
+    
+    res.write(JSON.stringify(exportData, null, 2));
+    res.end();
+  } catch (error) {
+    console.error('Data export error:', error);
+    res.status(500).json({ success: false, message: 'Failed to export data', error: error.message });
+  }
+})
+
 // @route   POST /api/auth/forgot-password
 // @desc    Trigger forgot password flow (sends reset email in production)
 // @access  Public
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', authLimiter, async (req, res) => {
   try {
     const { email } = req.body
-    // Always respond with a success message to avoid revealing account existence
     if (!email) {
       return res.status(400).json({ success: false, message: 'Email is required' })
     }
 
-    // In demo mode or if DB not connected, return generic success
     if (mongoose.connection.readyState !== 1) {
-      console.log(`Forgot password requested for (demo): ${email}`)
       return res.json({ success: true, message: 'If an account exists, a reset link has been sent to the provided email.' })
     }
 
-    // Lookup user and (in a real app) issue a reset token + send email (omitted here)
     const user = await User.findOne({ email: email.toLowerCase() })
-    if (user) {
-      // TODO: generate reset token, persist it, and email the user.
-      console.log(`Password reset requested for user id: ${user._id} (no email sent in this demo)`)
+    if (!user) {
+      // Return success anyway to prevent email enumeration
+      return res.json({ success: true, message: 'If an account exists, a reset link has been sent to the provided email.' })
     }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(20).toString('hex')
+
+    // Hash token and set to resetPasswordToken field
+    user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex')
+    // Set expire (15 minutes)
+    user.resetPasswordExpire = Date.now() + 15 * 60 * 1000
+
+    await user.save()
+
+    // Create reset url
+    const frontendURL = process.env.VITE_FRONTEND_URL || 'http://localhost:5173'
+    const resetUrl = `${frontendURL}/reset-password/${resetToken}`
+
+    // In a production app, send this via email. For now, log it.
+    console.log(`[DEV MODE] Password Reset Link for ${user.email}: \n${resetUrl}`)
 
     return res.json({ success: true, message: 'If an account exists, a reset link has been sent to the provided email.' })
   } catch (error) {
     console.error('Forgot password error:', error)
     res.status(500).json({ success: false, message: 'Failed to process forgot password request', error: error.message })
+  }
+})
+
+// @route   PUT /api/auth/reset-password/:resettoken
+// @desc    Reset password using token
+// @access  Public
+router.put('/reset-password/:resettoken', async (req, res) => {
+  try {
+    const resetPasswordToken = crypto.createHash('sha256').update(req.params.resettoken).digest('hex')
+
+    const user = await User.findOne({
+      resetPasswordToken,
+      resetPasswordExpire: { $gt: Date.now() }
+    })
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired token' })
+    }
+
+    const { password } = req.body
+    if (!password) {
+      return res.status(400).json({ success: false, message: 'New password is required' })
+    }
+
+    // Set new password (the pre-save hook will hash it and run validation)
+    user.password = password
+    user.resetPasswordToken = undefined
+    user.resetPasswordExpire = undefined
+
+    await user.save()
+
+    res.json({ success: true, message: 'Password reset successful' })
+  } catch (error) {
+    // Check for validation error (e.g. password strength)
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(val => val.message)
+      return res.status(400).json({ success: false, message: messages.join('. ') })
+    }
+    console.error('Reset password error:', error)
+    res.status(500).json({ success: false, message: 'Failed to reset password', error: error.message })
   }
 })
 

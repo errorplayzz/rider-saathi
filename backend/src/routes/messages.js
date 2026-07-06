@@ -2,6 +2,7 @@ import express from 'express';
 import { protect } from '../middleware/auth.js';
 import Message from '../models/Message.js';
 import User from '../models/User.js';
+import { censorText } from '../utils/moderation.js';
 
 const router = express.Router();
 
@@ -143,7 +144,7 @@ router.post('/send', protect, async (req, res) => {
       sender: req.user._id,
       recipient: recipientId,
       messageType: 'direct',
-      content,
+      content: censorText(content),
       contentType,
       mediaUrl,
       replyTo,

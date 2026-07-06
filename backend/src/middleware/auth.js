@@ -32,7 +32,8 @@ export const auth = async (req, res, next) => {
           email: 'demo@ridersathi.com',
           name: 'Demo Rider',
           username: 'demo_rider',
-          avatar: null
+          avatar: null,
+          role: 'admin' // Demo user is admin for testing
         }
         return next()
       }
@@ -95,7 +96,8 @@ export const auth = async (req, res, next) => {
           name: mongoUser.name,
           username: mongoUser.username,
           avatar: mongoUser.avatar,
-          supabaseId: supabaseUser.id
+          supabaseId: supabaseUser.id,
+          role: mongoUser.role || 'user'
         }
         return next()
       }
@@ -126,7 +128,8 @@ export const auth = async (req, res, next) => {
         email: user.email,
         name: user.name,
         username: user.username,
-        avatar: user.avatar
+        avatar: user.avatar,
+        role: user.role || 'user'
       }
       next()
     } catch (error) {

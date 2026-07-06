@@ -32,7 +32,14 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: [true, 'Password is required'],
-    minlength: [6, 'Password must be at least 6 characters'],
+    minlength: [8, 'Password must be at least 8 characters'],
+    validate: {
+      validator: function(v) {
+        // Must contain at least one uppercase, one lowercase, one number, and one special character
+        return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/.test(v);
+      },
+      message: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.'
+    },
     select: false
   },
   phone: {
@@ -203,6 +210,10 @@ const userSchema = new mongoose.Schema({
     }
   },
   
+  // Password Reset
+  resetPasswordToken: String,
+  resetPasswordExpire: Date,
+  
   // Status
   isOnline: {
     type: Boolean,
@@ -225,6 +236,13 @@ const userSchema = new mongoose.Schema({
   isVerified: {
     type: Boolean,
     default: false
+  },
+  
+  // Role-Based Access Control
+  role: {
+    type: String,
+    enum: ['user', 'moderator', 'admin'],
+    default: 'user'
   }
 }, {
   timestamps: true
@@ -303,6 +321,9 @@ userSchema.statics.findNearby = function(longitude, latitude, maxDistance = 1000
   if (!includeOffline) {
     query.isOnline = true
   }
+
+  // Privacy protection: Only show users who explicitly enabled location sharing
+  query['preferences.shareLocation'] = { $ne: false }
 
   return this.find(query).select('-password -emergencyContacts')
 }

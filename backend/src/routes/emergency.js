@@ -2,6 +2,7 @@ import express from 'express'
 import axios from 'axios'
 import { auth } from '../middleware/auth.js'
 import mongoose from 'mongoose'
+import rateLimit from 'express-rate-limit'
 import EmergencyAlert from '../models/EmergencyAlert.js'
 import User from '../models/User.js'
 import { Reward } from '../models/Reward.js'
@@ -91,10 +92,19 @@ async function notifyContacts(alert) {
 
 const router = express.Router()
 
+// Rate limiting for SOS creation (Prevent Spam/Reward Farming)
+const sosLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000, // 24 hours
+  max: 3, // Limit each IP/User to 3 SOS requests per day
+  message: 'Daily limit for emergency alerts reached. Please call local authorities directly.',
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
 // @route   POST /api/emergency/alert
 // @desc    Create emergency alert
 // @access  Private
-router.post('/alert', auth, async (req, res) => {
+router.post('/alert', auth, sosLimiter, async (req, res) => {
   try {
     const { type, severity, location, description } = req.body
 
