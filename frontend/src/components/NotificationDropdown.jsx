@@ -486,7 +486,14 @@ const NotificationDropdown = () => {
                 <p className="m-0 p-0 text-[13px] text-[#86868B] leading-none">Ride updates</p>
               </div>
             </div>
-            <button className="flex-shrink-0 p-2 -mr-2 rounded-full hover:bg-white/5 transition-colors group">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                navigate('/profile', { state: { activeTab: 'settings', t: Date.now() } });
+              }}
+              className="flex-shrink-0 p-2 -mr-2 rounded-full hover:bg-white/5 transition-colors group"
+            >
               <Cog8ToothIcon className="w-5 h-5 text-[#86868B] group-hover:text-[#F5F5F7] transition-colors" />
             </button>
           </div>

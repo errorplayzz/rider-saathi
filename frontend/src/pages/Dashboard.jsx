@@ -799,8 +799,12 @@ const Dashboard = () => {
                         <ExclamationTriangleIcon className="w-5 h-5" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-[#F5F5F7] capitalize">{alert.type} Alert</p>
-                        <p className="text-xs text-[#86868B]">{alert.distance ? `${Math.round(alert.distance)}m away` : 'Nearby'} • Just now</p>
+                        <p className="text-sm font-medium text-[#F5F5F7]">
+                          {alert.user?.name ? `${alert.user.name} needs help` : 'Emergency Alert'}
+                        </p>
+                        <p className="text-xs text-[#86868B] capitalize">
+                          {alert.alert_type || alert.type || 'General'} Alert • {alert.distance ? `${Math.round(alert.distance)}m away` : 'Nearby'} • Just now
+                        </p>
                       </div>
                     </div>
                     <Link to="/emergency" className="px-4 py-2 rounded-full bg-white/5 text-xs font-medium text-[#F5F5F7] hover:bg-[#B08968] hover:text-black transition-colors opacity-0 group-hover:opacity-100">

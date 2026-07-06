@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   UserIcon,
@@ -80,6 +80,13 @@ const Profile = () => {
   const { theme, toggleTheme, isDark } = useTheme()
 
   const navigate = useNavigate()
+  const location = useLocation()
+
+  useEffect(() => {
+    if (location.state?.activeTab) {
+      setActiveTab(location.state.activeTab)
+    }
+  }, [location.state])
 
   const tabs = [
     { id: 'profile', name: 'Profile', icon: UserIcon },
@@ -206,10 +213,12 @@ const Profile = () => {
 
       setUserStats({
         totalRides: profile.total_rides || 0,
-        totalDistance: (profile.total_distance_meters / 1000).toFixed(1) || 0,
+        totalDistance: profile.total_distance_meters || 0,
         rewardPoints: profile.reward_points || 0,
         helpGiven: profile.help_count || 0,
-        rating: '5.0' // Default rating
+        monthlyRides: profile.monthly_rides || 0,
+        monthlyDistance: profile.monthly_distance_meters || 0,
+        rating: profile.rating || '5.0'
       })
     } catch (error) {
       console.error('Stats fetch error:', error)
@@ -616,7 +625,7 @@ const Profile = () => {
                   <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
                     {[
                       { label: 'Total Rides', value: userStats?.totalRides || 0, icon: ChartBarIcon },
-                      { label: 'Distance (km)', value: userStats?.totalDistance || '0.0', icon: MapPinIcon },
+                      { label: 'Distance (km)', value: userStats?.totalDistance ? (userStats.totalDistance / 1000).toFixed(1) : '0.0', icon: MapPinIcon },
                       { label: 'Help Given', value: userStats?.helpGiven || 0, icon: ShieldCheckIcon },
                       { label: 'Achievements', value: achievements?.length || 0, icon: TrophyIcon }
                     ].map((stat, idx) => (
